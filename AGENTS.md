@@ -17,10 +17,10 @@ There are no external assets, build tools, or test directories. The project runs
 Open the file directly in a web browser:
 
 `
-file:///E:/dev/physics/index.html
+index.html (from the repo root)
 `
 
-or double-click index.html from your file explorer. No installation or local server is needed; Matter.js loads from CDN.
+or double-click index.html from your file explorer at the repo root. No installation or local server is needed; Matter.js loads from CDN.
 
 ## Building & Testing
 
@@ -32,7 +32,7 @@ There is no build step. To test changes:
 For quick syntax checks, run the script through Node first — it will flag JS errors before you open a browser:
 
 `
-node -e "require('fs').readFileSync('E:/dev/physics/index.html','utf8'); console.log('OK')"
+node -e "require('fs').readFileSync('index.html','utf8'); console.log('OK')"
 `
 
 ## Coding Style & Naming Conventions
@@ -52,7 +52,7 @@ When updating index.html, prefer appending to a buffer via **writer.js** or simi
 
 `
 # In writer.js, build HTML line by line, then:
-fs.writeFileSync('E:/dev/physics/index.html', html, 'utf-8');
+fs.writeFileSync('index.html', html, 'utf-8');
 `
 
 ## Commit & PR Guidelines
