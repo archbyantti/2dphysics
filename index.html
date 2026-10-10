@@ -20,6 +20,7 @@ const { Engine, World, Bodies, Body, Constraint } = Matter;
 var canvas, ctx, W, H;
 var engine, world;
 var boxes = [];
+var walls = [];
 var mousedown = false;
 var lastMp = { x: 0, y: 0 };
 var mouseRightDown = false;
@@ -85,10 +86,12 @@ function init() {
 
 function addWalls() {
     var thick = 40;
-    var ground = Bodies.rectangle(W / 2, H + thick / 2, W + 400, thick, { isStatic: true, friction: 1 });
-    var leftWall = Bodies.rectangle(-thick / 2, H / 2, thick, H * 3, { isStatic: true, friction: 1 });
-    var rightWall = Bodies.rectangle(W + thick / 2, H / 2, thick, H * 3, { isStatic: true, friction: 1 });
-    World.add(world, [ground, leftWall, rightWall]);
+    var ground = Bodies.rectangle(W / 2, H + thick / 2, W + 2 * thick, thick, { isStatic: true, friction: 1 });
+    var leftWall = Bodies.rectangle(-thick / 2, 0, thick, H * 2, { isStatic: true, friction: 1 });
+    var rightWall = Bodies.rectangle(W + thick / 2, 0, thick, H * 2, { isStatic: true, friction: 1 });
+    walls = [ground, leftWall, rightWall];
+    walls.forEach(function (wl) { wl.renderColor = '#3a4358'; });
+    World.add(world, walls);
 }
 
 function createCar() {
@@ -172,6 +175,10 @@ function drawGrid(){var gridSize=50*zoom;if(gridSize<10)return;ctx.strokeStyle='
 
 function drawBox(b){var pos=worldToScreen(b.position.x,b.position.y),angle=b.angle,color=b.renderColor||'#aaa',w,h;if(b._originalWidth!==undefined&&b._originalHeight!==undefined){w=b._originalWidth;h=b._originalHeight;}else{if(b.circleRadius){var r=b.circleRadius;w=r*2;h=r*2;}else if(b.vertices){var minx=b.vertices[0].x,maxx=b.vertices[0].x,miny=b.vertices[0].y,maxy=b.vertices[0].y;for(var i=1;i<b.vertices.length;i++){if(b.vertices[i].x<minx)minx=b.vertices[i].x;if(b.vertices[i].x>maxx)maxx=b.vertices[i].x;if(b.vertices[i].y<miny)miny=b.vertices[i].y;if(b.vertices[i].y>maxy)maxy=b.vertices[i].y;}w=maxx-minx;h=maxy-miny;}else{w=b.bounds.max.x-b.bounds.min.x;h=b.bounds.max.y-b.bounds.min.y;}}b._originalWidth=w;b._originalHeight=h;ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(angle);ctx.fillStyle=color;var scaledW=w*zoom,scaledH=h*zoom;if(b.vertices){ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);}else{ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);}ctx.strokeStyle='rgba(255,255,255,0.4)';ctx.lineWidth=1.5/zoom;ctx.strokeRect(-scaledW/2,-scaledH/2,scaledW,scaledH);var grad=ctx.createLinearGradient(0,-scaledH/2,0,scaledH/2);grad.addColorStop(0,'rgba(255,255,255,0.1)');grad.addColorStop(0.5,'rgba(255,255,255,0)');ctx.fillStyle=grad;ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);ctx.restore();}
 
+function drawWall(b){var pos=worldToScreen(b.position.x,b.position.y);var w=b.bounds.max.x-b.bounds.min.x;var h=b.bounds.max.y-b.bounds.min.y;var sw=w*zoom,sh=h*zoom;ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(b.angle);ctx.fillStyle=b.renderColor||'#3a4358';ctx.fillRect(-sw/2,-sh/2,sw,sh);ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=2/zoom;ctx.strokeRect(-sw/2,-sh/2,sw,sh);ctx.restore();}
+
+function drawWalls(){for(var i=0;i<walls.length;i++){drawWall(walls[i]);}}
+
 function carForward(){ return {x: Math.cos(car.chassis.angle), y: Math.sin(car.chassis.angle)}; }
 
 function drawWheel(wl){var r=car.wheelR*zoom,pos=worldToScreen(wl.position.x,wl.position.y);ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(wl.angle);ctx.fillStyle='#222';ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=Math.max(1.5/zoom,1);ctx.stroke();ctx.strokeStyle='#aaa';ctx.lineWidth=r*0.08;for(var i=0;i<5;i++){var a=(i/5)*Math.PI*2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*r*0.8,Math.sin(a)*r*0.8);ctx.stroke();}ctx.fillStyle='#888';ctx.beginPath();ctx.arc(0,0,r*0.2,0,Math.PI*2);ctx.fill();ctx.restore();}
@@ -198,6 +205,7 @@ function draw() {
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0,0,W,H);
     drawGrid();
+    drawWalls();
     for (var i=0;i<boxes.length;i++) {
         drawBox(boxes[i]);
     }
