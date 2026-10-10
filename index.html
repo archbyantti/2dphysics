@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="fi">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Fysiikkasimulaatio</title>
+<title>Physics Simulation</title>
 <style>
 body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
 canvas { display: block; cursor: crosshair; }
@@ -14,8 +14,8 @@ canvas { display: block; cursor: crosshair; }
 <body>
 <canvas id="canvas" tabindex="0"></canvas>
 <button id="addBoxBtn" style="position:absolute;top:10px;right:120px;">Add Box</button>
-<div id="info">Hiiri vasen: luo laatikko | Shift+klikkaus: poista laatikko | Vedä keskellä: siirrä näkymää | Ctrl+vieritys: zoomaa</div>
-<div id="count">Laatikkoja: 0</div>
+<div id="info">Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom</div>
+<div id="count">Boxes: 0</div>
 <script>
 const { Engine, World, Bodies, Body, Constraint } = Matter;
 var canvas, ctx, W, H;
