@@ -1,3 +1,4 @@
+// Set up canvas event listeners
 function setUpCanvas() {
     window.addEventListener('resize', handleResize);
     canvas.addEventListener('mousedown', handleMouseDown);
@@ -8,6 +9,7 @@ function setUpCanvas() {
     canvas.addEventListener('keyup', handleKeyUp);
 }
 
+// Handle window resize
 function handleResize() {
     W = window.innerWidth;
     H = window.innerHeight;
@@ -15,26 +17,32 @@ function handleResize() {
     canvas.height = H;
 }
 
+// Handle mouse press
 function handleMouseDown(e) {
     mousedown = true;
     lastMp = { x: e.clientX, y: e.clientY };
+    // Shift+click removes box at position
     if (e.shiftKey) {
         removeBoxAt(e.clientX, e.clientY);
         return;
     }
+    // Ignore middle and right buttons for spawning
     if (e.button === 1 || e.button === 2) {
         return;
     }
 }
 
+// Handle mouse release - spawn box
 function handleMouseUp(e) {
     mousedown = false;
+    // Left click without modifiers spawns a box
     if (e.button === 0 && !(e.ctrlKey || e.shiftKey)) {
         var worldPos = screenToWorld(e.clientX, e.clientY);
         addBox(worldPos.x, worldPos.y);
     }
 }
 
+// Handle mouse drag for panning
 function handleMouseMove(e) {
     if (!mousedown) return;
     var dx = e.clientX - lastMp.x, dy = e.clientY - lastMp.y;
@@ -44,19 +52,23 @@ function handleMouseMove(e) {
     }
     lastMp = { x: e.clientX, y: e.clientY };
 }
-function handleKeyDown(e){
-    switch(e.code){
+
+// Handle keyboard input for car controls
+function handleKeyDown(e) {
+    switch (e.code) {
         case 'ArrowUp': input.accel = true; break;
         case 'ArrowDown': input.rev = true; break;
     }
 }
-function handleKeyUp(e){
-    switch(e.code){
+
+function handleKeyUp(e) {
+    switch (e.code) {
         case 'ArrowUp': input.accel = false; break;
         case 'ArrowDown': input.rev = false; break;
     }
 }
 
+// Handle mouse wheel for zoom (Ctrl or Cmd + scroll)
 function handleWheel(e) {
     e.preventDefault();
     if (!(e.ctrlKey || e.metaKey)) return;

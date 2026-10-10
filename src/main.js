@@ -1,3 +1,4 @@
+// Initialize the simulation
 function init() {
     canvas = document.getElementById('canvas');
     ctx = canvas.getContext('2d');
@@ -18,6 +19,16 @@ function init() {
     startLoop();
 }
 
-function startLoop(){function loop(){updateCarMotor();Engine.update(engine,1000/60);draw();requestAnimationFrame(loop);}loop();}
+// Start the main game loop
+function startLoop() {
+    function loop() {
+        updateCarMotor();
+        Engine.update(engine, 1000 / 60);
+        draw();
+        requestAnimationFrame(loop);
+    }
+    loop();
+}
 
+// Start when page is loaded
 window.addEventListener('load', init);

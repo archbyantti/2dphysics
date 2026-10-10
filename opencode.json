@@ -4,21 +4,21 @@
   "provider": {
     "local": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Local llama.cpp",
+      "name": "llama.app",
       "options": {
         "baseURL": "http://127.0.0.1:9931/v1",
         "apiKey": "local"
       },
       "models": {
-        "YOUR_MODEL_ID": {
-          "name": "Tesslate/OmniCoder-9B-GGUF:Q4_K_M",
+        "Tesslate/OmniCoder-9B-GGUF:Q4_K_M": {
+          "name": "OmniCoder-9B",
           "limit": {
-            "context": 16384,
+            "context": 32768,
             "output": 4096
           }
         }
       }
     }
   },
-  "model": "local/YOUR_MODEL_ID"
+  "model": "local/Tesslate/OmniCoder-9B-GGUF:Q4_K_M"
 }
