@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<title>Fysiikkasimulaatio</title>
+<style>
+body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
+canvas { display: block; cursor: crosshair; }
+#info { position: absolute; top: 10px; left: 10px; color: #ccc; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px; pointer-events: none; font-size: 13px; line-height: 1.6; }
+#count { position: absolute; top: 10px; right: 10px; color: #0f0; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px; pointer-events: none; font-size: 14px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
+</head>
+<body>
+<canvas id="canvas" tabindex="0"></canvas>
+<button id="addBoxBtn" style="position:absolute;top:10px;right:120px;">Add Box</button>
+<div id="info">Hiiri vasen: luo laatikko | Shift+klikkaus: poista laatikko | Vedä keskellä: siirrä näkymää | Ctrl+vieritys: zoomaa</div>
+<div id="count">Laatikkoja: 0</div>
+<script>
+const { Engine, World, Bodies, Body, Constraint } = Matter;
+var canvas, ctx, W, H;
+var engine, world;
+var boxes = [];
+var mousedown = false;
+var lastMp = { x: 0, y: 0 };
+var mouseRightDown = false;
+var mouseStartPos = null;
+var panOffset = { x: 0, y: 0 };
+var zoom = 1.0;
+var car = null;
+var countEl = null;
+
+// Motor configuration
+var MOTOR = {
+    wheelTorque: 3.84,
+    revTorque: 1.28,
+    topSpeed: 12,
+    maxRevSpeed: 5,
+    airDrag: 0.0006
+};
+var input = { accel: false, rev: false };
+
+function updateCarMotor() {
+    if (!car) return;
+    var fwd = carForward();
+    var vx = car.chassis.velocity.x, vy = car.chassis.velocity.y;
+    var speed = vx * fwd.x + vy * fwd.y;
+    car.speed = speed;
+    var tau;
+    if (input.accel) {
+        tau = MOTOR.wheelTorque * Math.max(0, 1 - Math.abs(speed) / MOTOR.topSpeed);
+        if (speed < 0.05) tau += 0.00001;
+    } else if (input.rev) {
+        tau = -MOTOR.revTorque;
+    } else {
+        tau = 0;
+    }
+    var delta = 0.01; // time step adjustment
+    car.wheels.forEach(function (wl) {
+        wl.torque = (wl.torque || 0) + tau;
+        wl.torque -= MOTOR.airDrag * wl.angularVelocity * Math.abs(wl.angularVelocity);
+        Body.setAngularVelocity(wl, wl.angularVelocity + wl.torque * delta);
+        wl.torque = 0;
+    });
+}
+
+function init() {
+    canvas = document.getElementById('canvas');
+    ctx = canvas.getContext('2d');
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    countEl = document.getElementById('count');
+    engine = Engine.create({
+        enableSleeping: false,
+        gravity: { y: 1.5, x: 0 },
+        timing: { timeScale: 1.0 }
+    });
+    world = engine.world;
+    addWalls();
+    createCar();
+    setUpCanvas();
+    startLoop();
+}
+
+function addWalls() {
+    var thick = 40;
+    var ground = Bodies.rectangle(W / 2, H + thick / 2, W + 400, thick, { isStatic: true, friction: 1 });
+    var leftWall = Bodies.rectangle(-thick / 2, H / 2, thick, H * 3, { isStatic: true, friction: 1 });
+    var rightWall = Bodies.rectangle(W + thick / 2, H / 2, thick, H * 3, { isStatic: true, friction: 1 });
+    World.add(world, [ground, leftWall, rightWall]);
+}
+
+function createCar() {
+    var cx = W / 2;
+    var cy = H / 2 + 50;
+    var w = 280, ch = 70;
+    var wheelR = 40;
+    var wheelY = cy + ch / 2 - wheelR * 0.2;
+    var axOffset = 100;
+    var wheels = [
+        Bodies.circle(cx - axOffset, wheelY, wheelR, { density: 0.004, friction: 0.9 }),
+        Bodies.circle(cx + axOffset, wheelY, wheelR, { density: 0.004, friction: 0.9 })
+    ];
+    var chassis = Bodies.rectangle(cx, cy, w, ch, { density: 0.002, friction: 0.1 });
+    wheels[0].collisionFilter.group = -1;
+    wheels[1].collisionFilter.group = -1;
+    chassis.collisionFilter.group = -1;
+    var joints = wheels.map(function(wl, i) {
+        var attachX = (i === 0 ? -axOffset : axOffset);
+        return Constraint.create({
+            bodyA: chassis,
+            bodyB: wl,
+            pointA: { x: attachX, y: wheelY - cy },
+            pointB: { x: 0, y: 0 },
+            stiffness: 0.9,
+            damping: 0.1
+        });
+    });
+    World.add(world, [chassis, wheels[0], wheels[1]].concat(joints));
+    car = {x: cx, y: cy, width: w, height: ch, color: '#e74c3c', visible: true, chassis: chassis, wheels: wheels, joints: joints, wheelR: wheelR, axOffset: axOffset, speed: 0};
+}
+
+function setUpCanvas() {
+    window.addEventListener('resize', handleResize);
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    canvas.addEventListener('keydown', handleKeyDown);
+canvas.addEventListener('keyup', handleKeyUp);
+}
+
+function handleResize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+}
+
+function screenToWorld(sx, sy) { return {x:(sx - panOffset.x)/zoom, y:(sy - panOffset.y)/zoom}; }
+function worldToScreen(wx, wy){return {x: wx*zoom + panOffset.x, y: wy*zoom + panOffset.y};}
+
+function debugBoxPosition(b,label){/*unused*/}
+
+function handleMouseDown(e){mousedown=true;lastMp={x:e.clientX,y:e.clientY};mouseStartPos={x:e.clientX,y:e.clientY};if(e.shiftKey){removeBoxAt(e.clientX,e.clientY);return;}if(e.button===1||e.button===2){return;}}
+function handleMouseUp(e){mousedown=false;mouseStartPos=null;if(e.button===0&&!(e.ctrlKey||e.shiftKey)){var worldPos=screenToWorld(e.clientX,e.clientY);addBox(worldPos.x,worldPos.y);}}
+function handleMouseMove(e){if(!mousedown)return;var dx=e.clientX-lastMp.x,dy=e.clientY-lastMp.y;if(dx!==0||dy!==0){panOffset.x+=dx;panOffset.y+=dy;}lastMp={x:e.clientX,y:e.clientY};}
+function handleMouseClick(e){if(!e.shiftKey&&mouseStartPos&&Math.abs(e.clientX-mouseStartPos.x)<5&&Math.abs(e.clientY-mouseStartPos.y)<5){var worldPos=screenToWorld(e.clientX,e.clientY);addBox(worldPos.x,worldPos.y);}}
+function handleKeyDown(e){
+    switch(e.code){
+        case 'ArrowUp': input.accel = true; break;
+        case 'ArrowDown': input.rev = true; break;
+    }
+}
+function handleKeyUp(e){
+    switch(e.code){
+        case 'ArrowUp': input.accel = false; break;
+        case 'ArrowDown': input.rev = false; break;
+    }
+}
+
+function handleWheel(e){e.preventDefault();var zoomFactor=e.ctrlKey?(e.deltaY>0?0.9:1.1):1.0;if(e.ctrlKey||e.metaKey){var mouseWorldX=(e.clientX-panOffset.x)/zoom;var mouseWorldY=(e.clientY-panOffset.y)/zoom;zoom*=zoomFactor;zoom=Math.max(0.1,Math.min(5,zoom));panOffset.x=e.clientX-mouseWorldX*zoom;panOffset.y=e.clientY-mouseWorldY*zoom;}}
+
+function removeBoxAt(sx,sy){var worldPos=screenToWorld(sx,sy);for(var i=boxes.length-1;i>=0;i--){var b=boxes[i];var pos=b.position;var w=b.bounds.max.x-b.bounds.min.x;var h=b.bounds.max.y-b.bounds.min.y;if(worldPos.x>=pos.x-w/2&&worldPos.x<=pos.x+w/2&&worldPos.y>=pos.y-h/2&&worldPos.y<=pos.y+h/2){World.remove(world,b);boxes.splice(i,1);updateCount();break;}}}
+
+function addBox(wx,wy){var s=30+Math.random()*40;var colors=['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22'];var color=colors[Math.floor(Math.random()*colors.length)];var b;if(Math.random()>0.5){var width=s;var height=s*(0.6+Math.random()*0.8);b=Bodies.rectangle(wx,wy,width,height,{restitution:0.3,friction:0.95,density:0.0012,chamfer:{radius:4},slop:0.01,isSensor:false});}else{var sides=Math.floor(3+Math.random()*4);var radius=s/2;b=Bodies.polygon(wx,wy,sides,radius,{restitution:0.3,friction:0.95,density:0.0012,chamfer:{radius:4},slop:0.01,isSensor:false});}if(b.vertices){var minx=b.vertices[0].x,maxx=b.vertices[0].x,miny=b.vertices[0].y,maxy=b.vertices[0].y;for(var i=1;i<b.vertices.length;i++){if(b.vertices[i].x<minx)minx=b.vertices[i].x;if(b.vertices[i].x>maxx)maxx=b.vertices[i].x;if(b.vertices[i].y<miny)miny=b.vertices[i].y;if(b.vertices[i].y>maxy)maxy=b.vertices[i].y;}b._originalWidth=maxx-minx;b._originalHeight=maxy-miny;}else{b._originalWidth=b.bounds.max.x-b.bounds.min.x;b._originalHeight=b.bounds.max.y-b.bounds.min.y;}b.renderColor=color;World.add(world,b);boxes.push(b);updateCount();}
+
+function updateCount(){if(countEl){countEl.textContent='Laatikkoja: '+boxes.length;}}
+
+function drawGrid(){var gridSize=50*zoom;if(gridSize<10)return;ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;var startX=panOffset.x%gridSize, startY=panOffset.y%gridSize;for(var x=startX;x<W;x+=gridSize){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}for(var y=startY;y<H;y+=gridSize){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
+
+function drawBox(b){var pos=worldToScreen(b.position.x,b.position.y),angle=b.angle,color=b.renderColor||'#aaa',w,h;if(b._originalWidth!==undefined&&b._originalHeight!==undefined){w=b._originalWidth;h=b._originalHeight;}else{if(b.circleRadius){var r=b.circleRadius;w=r*2;h=r*2;}else if(b.vertices){var minx=b.vertices[0].x,maxx=b.vertices[0].x,miny=b.vertices[0].y,maxy=b.vertices[0].y;for(var i=1;i<b.vertices.length;i++){if(b.vertices[i].x<minx)minx=b.vertices[i].x;if(b.vertices[i].x>maxx)maxx=b.vertices[i].x;if(b.vertices[i].y<miny)miny=b.vertices[i].y;if(b.vertices[i].y>maxy)maxy=b.vertices[i].y;}w=maxx-minx;h=maxy-miny;}else{w=b.bounds.max.x-b.bounds.min.x;h=b.bounds.max.y-b.bounds.min.y;}}b._originalWidth=w;b._originalHeight=h;ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(angle);ctx.fillStyle=color;var scaledW=w*zoom,scaledH=h*zoom;if(b.vertices){ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);}else{ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);}ctx.strokeStyle='rgba(255,255,255,0.4)';ctx.lineWidth=1.5/zoom;ctx.strokeRect(-scaledW/2,-scaledH/2,scaledW,scaledH);var grad=ctx.createLinearGradient(0,-scaledH/2,0,scaledH/2);grad.addColorStop(0,'rgba(255,255,255,0.1)');grad.addColorStop(0.5,'rgba(255,255,255,0)');ctx.fillStyle=grad;ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);ctx.restore();}
+
+function carForward(){ return {x: Math.cos(car.chassis.angle), y: Math.sin(car.chassis.angle)}; }
+
+function drawWheel(wl){var r=car.wheelR*zoom,pos=worldToScreen(wl.position.x,wl.position.y);ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(wl.angle);ctx.fillStyle='#222';ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=Math.max(1.5/zoom,1);ctx.stroke();ctx.strokeStyle='#aaa';ctx.lineWidth=r*0.08;for(var i=0;i<5;i++){var a=(i/5)*Math.PI*2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*r*0.8,Math.sin(a)*r*0.8);ctx.stroke();}ctx.fillStyle='#888';ctx.beginPath();ctx.arc(0,0,r*0.2,0,Math.PI*2);ctx.fill();ctx.restore();}
+
+
+
+function drawCar() {
+    if (!car) return;
+    var pos = worldToScreen(car.chassis.position.x, car.chassis.position.y);
+    var angle = car.chassis.angle;
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(angle);
+    ctx.fillStyle = car.color;
+    ctx.fillRect(-car.width*zoom/2, -car.height*zoom/2, car.width*zoom, car.height*zoom);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2/zoom;
+    ctx.strokeRect(-car.width*zoom/2, -car.height*zoom/2, car.width*zoom, car.height*zoom);
+    ctx.restore();
+    car.wheels.forEach(drawWheel);
+}
+
+function draw() {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0,0,W,H);
+    drawGrid();
+    for (var i=0;i<boxes.length;i++) {
+        drawBox(boxes[i]);
+    }
+    drawCar();
+}
+
+function startLoop(){function loop(){updateCarMotor();Engine.update(engine,1000/60);draw();requestAnimationFrame(loop);}loop();}
+
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
