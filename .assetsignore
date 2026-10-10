@@ -1,0 +1,8 @@
+# Ignore Markdown files in root (not in src/)
+*.md
+
+# Ignore other common non-production files in root
+.scripts/
+*.log
+.DS_Store
+Thumbs.db
