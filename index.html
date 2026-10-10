@@ -16,15 +16,13 @@ canvas { display: block; cursor: crosshair; }
 <div id="info">Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom</div>
 <div id="count">Boxes: 0</div>
 <script>
-const { Engine, World, Bodies, Body, Constraint } = Matter;
+var { Engine, World, Bodies, Body, Constraint } = Matter;
 var canvas, ctx, W, H;
 var engine, world;
 var boxes = [];
 var walls = [];
 var mousedown = false;
 var lastMp = { x: 0, y: 0 };
-var mouseRightDown = false;
-var mouseStartPos = null;
 var panOffset = { x: 0, y: 0 };
 var zoom = 1.0;
 var car = null;
@@ -131,7 +129,7 @@ function setUpCanvas() {
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     canvas.addEventListener('keydown', handleKeyDown);
-canvas.addEventListener('keyup', handleKeyUp);
+    canvas.addEventListener('keyup', handleKeyUp);
 }
 
 function handleResize() {
@@ -144,12 +142,35 @@ function handleResize() {
 function screenToWorld(sx, sy) { return {x:(sx - panOffset.x)/zoom, y:(sy - panOffset.y)/zoom}; }
 function worldToScreen(wx, wy){return {x: wx*zoom + panOffset.x, y: wy*zoom + panOffset.y};}
 
-function debugBoxPosition(b,label){/*unused*/}
+function handleMouseDown(e) {
+    mousedown = true;
+    lastMp = { x: e.clientX, y: e.clientY };
+    if (e.shiftKey) {
+        removeBoxAt(e.clientX, e.clientY);
+        return;
+    }
+    if (e.button === 1 || e.button === 2) {
+        return;
+    }
+}
 
-function handleMouseDown(e){mousedown=true;lastMp={x:e.clientX,y:e.clientY};mouseStartPos={x:e.clientX,y:e.clientY};if(e.shiftKey){removeBoxAt(e.clientX,e.clientY);return;}if(e.button===1||e.button===2){return;}}
-function handleMouseUp(e){mousedown=false;mouseStartPos=null;if(e.button===0&&!(e.ctrlKey||e.shiftKey)){var worldPos=screenToWorld(e.clientX,e.clientY);addBox(worldPos.x,worldPos.y);}}
-function handleMouseMove(e){if(!mousedown)return;var dx=e.clientX-lastMp.x,dy=e.clientY-lastMp.y;if(dx!==0||dy!==0){panOffset.x+=dx;panOffset.y+=dy;}lastMp={x:e.clientX,y:e.clientY};}
-function handleMouseClick(e){if(!e.shiftKey&&mouseStartPos&&Math.abs(e.clientX-mouseStartPos.x)<5&&Math.abs(e.clientY-mouseStartPos.y)<5){var worldPos=screenToWorld(e.clientX,e.clientY);addBox(worldPos.x,worldPos.y);}}
+function handleMouseUp(e) {
+    mousedown = false;
+    if (e.button === 0 && !(e.ctrlKey || e.shiftKey)) {
+        var worldPos = screenToWorld(e.clientX, e.clientY);
+        addBox(worldPos.x, worldPos.y);
+    }
+}
+
+function handleMouseMove(e) {
+    if (!mousedown) return;
+    var dx = e.clientX - lastMp.x, dy = e.clientY - lastMp.y;
+    if (dx !== 0 || dy !== 0) {
+        panOffset.x += dx;
+        panOffset.y += dy;
+    }
+    lastMp = { x: e.clientX, y: e.clientY };
+}
 function handleKeyDown(e){
     switch(e.code){
         case 'ArrowUp': input.accel = true; break;
@@ -163,25 +184,178 @@ function handleKeyUp(e){
     }
 }
 
-function handleWheel(e){e.preventDefault();var zoomFactor=e.ctrlKey?(e.deltaY>0?0.9:1.1):1.0;if(e.ctrlKey||e.metaKey){var mouseWorldX=(e.clientX-panOffset.x)/zoom;var mouseWorldY=(e.clientY-panOffset.y)/zoom;zoom*=zoomFactor;zoom=Math.max(0.1,Math.min(5,zoom));panOffset.x=e.clientX-mouseWorldX*zoom;panOffset.y=e.clientY-mouseWorldY*zoom;}}
+function handleWheel(e) {
+    e.preventDefault();
+    if (!(e.ctrlKey || e.metaKey)) return;
+    var zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    var mouseWorldX = (e.clientX - panOffset.x) / zoom;
+    var mouseWorldY = (e.clientY - panOffset.y) / zoom;
+    zoom *= zoomFactor;
+    zoom = Math.max(0.1, Math.min(5, zoom));
+    panOffset.x = e.clientX - mouseWorldX * zoom;
+    panOffset.y = e.clientY - mouseWorldY * zoom;
+}
 
-function removeBoxAt(sx,sy){var worldPos=screenToWorld(sx,sy);for(var i=boxes.length-1;i>=0;i--){var b=boxes[i];var pos=b.position;var w=b.bounds.max.x-b.bounds.min.x;var h=b.bounds.max.y-b.bounds.min.y;if(worldPos.x>=pos.x-w/2&&worldPos.x<=pos.x+w/2&&worldPos.y>=pos.y-h/2&&worldPos.y<=pos.y+h/2){World.remove(world,b);boxes.splice(i,1);updateCount();break;}}}
+function bodyBounds(b) {
+    if (b.vertices && b.vertices.length) {
+        var minx = b.vertices[0].x, maxx = b.vertices[0].x;
+        var miny = b.vertices[0].y, maxy = b.vertices[0].y;
+        for (var i = 1; i < b.vertices.length; i++) {
+            if (b.vertices[i].x < minx) minx = b.vertices[i].x;
+            if (b.vertices[i].x > maxx) maxx = b.vertices[i].x;
+            if (b.vertices[i].y < miny) miny = b.vertices[i].y;
+            if (b.vertices[i].y > maxy) maxy = b.vertices[i].y;
+        }
+        return { w: maxx - minx, h: maxy - miny };
+    }
+    if (b.circleRadius) {
+        return { w: b.circleRadius * 2, h: b.circleRadius * 2 };
+    }
+    return { w: b.bounds.max.x - b.bounds.min.x, h: b.bounds.max.y - b.bounds.min.y };
+}
 
-function addBox(wx,wy){var s=30+Math.random()*40;var colors=['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22'];var color=colors[Math.floor(Math.random()*colors.length)];var b;if(Math.random()>0.5){var width=s;var height=s*(0.6+Math.random()*0.8);b=Bodies.rectangle(wx,wy,width,height,{restitution:0.3,friction:0.95,density:0.0012,chamfer:{radius:4},slop:0.01,isSensor:false});}else{var sides=Math.floor(3+Math.random()*4);var radius=s/2;b=Bodies.polygon(wx,wy,sides,radius,{restitution:0.3,friction:0.95,density:0.0012,chamfer:{radius:4},slop:0.01,isSensor:false});}if(b.vertices){var minx=b.vertices[0].x,maxx=b.vertices[0].x,miny=b.vertices[0].y,maxy=b.vertices[0].y;for(var i=1;i<b.vertices.length;i++){if(b.vertices[i].x<minx)minx=b.vertices[i].x;if(b.vertices[i].x>maxx)maxx=b.vertices[i].x;if(b.vertices[i].y<miny)miny=b.vertices[i].y;if(b.vertices[i].y>maxy)maxy=b.vertices[i].y;}b._originalWidth=maxx-minx;b._originalHeight=maxy-miny;}else{b._originalWidth=b.bounds.max.x-b.bounds.min.x;b._originalHeight=b.bounds.max.y-b.bounds.min.y;}b.renderColor=color;World.add(world,b);boxes.push(b);updateCount();}
+function removeBoxAt(sx, sy) {
+    var worldPos = screenToWorld(sx, sy);
+    for (var i = boxes.length - 1; i >= 0; i--) {
+        var b = boxes[i];
+        var pos = b.position;
+        var bounds = bodyBounds(b);
+        if (worldPos.x >= pos.x - bounds.w / 2 && worldPos.x <= pos.x + bounds.w / 2 &&
+            worldPos.y >= pos.y - bounds.h / 2 && worldPos.y <= pos.y + bounds.h / 2) {
+            World.remove(world, b);
+            boxes.splice(i, 1);
+            updateCount();
+            break;
+        }
+    }
+}
+
+function addBox(wx, wy) {
+    var s = 30 + Math.random() * 40;
+    var colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
+    var color = colors[Math.floor(Math.random() * colors.length)];
+    var options = { restitution: 0.3, friction: 0.95, density: 0.0012, chamfer: { radius: 4 }, slop: 0.01, isSensor: false };
+    var b;
+    if (Math.random() > 0.5) {
+        var width = s;
+        var height = s * (0.6 + Math.random() * 0.8);
+        b = Bodies.rectangle(wx, wy, width, height, options);
+    } else {
+        var sides = Math.floor(3 + Math.random() * 4);
+        var radius = s / 2;
+        b = Bodies.polygon(wx, wy, sides, radius, options);
+    }
+    var bounds = bodyBounds(b);
+    b._originalWidth = bounds.w;
+    b._originalHeight = bounds.h;
+    b.renderColor = color;
+    World.add(world, b);
+    boxes.push(b);
+    updateCount();
+}
 
 function updateCount(){if(countEl){countEl.textContent='Boxes: '+boxes.length;}}
 
-function drawGrid(){var gridSize=50*zoom;if(gridSize<10)return;ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;var startX=panOffset.x%gridSize, startY=panOffset.y%gridSize;for(var x=startX;x<W;x+=gridSize){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}for(var y=startY;y<H;y+=gridSize){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
+function drawGrid() {
+    var gridSize = 50 * zoom;
+    if (gridSize < 10) return;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    var startX = panOffset.x % gridSize, startY = panOffset.y % gridSize;
+    for (var x = startX; x < W; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+    }
+    for (var y = startY; y < H; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+    }
+}
 
-function drawBox(b){var pos=worldToScreen(b.position.x,b.position.y),angle=b.angle,color=b.renderColor||'#aaa',w,h;if(b._originalWidth!==undefined&&b._originalHeight!==undefined){w=b._originalWidth;h=b._originalHeight;}else{if(b.circleRadius){var r=b.circleRadius;w=r*2;h=r*2;}else if(b.vertices){var minx=b.vertices[0].x,maxx=b.vertices[0].x,miny=b.vertices[0].y,maxy=b.vertices[0].y;for(var i=1;i<b.vertices.length;i++){if(b.vertices[i].x<minx)minx=b.vertices[i].x;if(b.vertices[i].x>maxx)maxx=b.vertices[i].x;if(b.vertices[i].y<miny)miny=b.vertices[i].y;if(b.vertices[i].y>maxy)maxy=b.vertices[i].y;}w=maxx-minx;h=maxy-miny;}else{w=b.bounds.max.x-b.bounds.min.x;h=b.bounds.max.y-b.bounds.min.y;}}b._originalWidth=w;b._originalHeight=h;ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(angle);ctx.fillStyle=color;var scaledW=w*zoom,scaledH=h*zoom;if(b.vertices){ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);}else{ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);}ctx.strokeStyle='rgba(255,255,255,0.4)';ctx.lineWidth=1.5/zoom;ctx.strokeRect(-scaledW/2,-scaledH/2,scaledW,scaledH);var grad=ctx.createLinearGradient(0,-scaledH/2,0,scaledH/2);grad.addColorStop(0,'rgba(255,255,255,0.1)');grad.addColorStop(0.5,'rgba(255,255,255,0)');ctx.fillStyle=grad;ctx.fillRect(-scaledW/2,-scaledH/2,scaledW,scaledH);ctx.restore();}
+function drawBox(b) {
+    var pos = worldToScreen(b.position.x, b.position.y);
+    var color = b.renderColor || '#aaa';
+    var w = b._originalWidth, h = b._originalHeight;
+    if (w === undefined || h === undefined) {
+        var bounds = bodyBounds(b);
+        w = bounds.w;
+        h = bounds.h;
+        b._originalWidth = w;
+        b._originalHeight = h;
+    }
+    var scaledW = w * zoom, scaledH = h * zoom;
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(b.angle);
+    ctx.fillStyle = color;
+    ctx.fillRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.strokeRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    var grad = ctx.createLinearGradient(0, -scaledH / 2, 0, scaledH / 2);
+    grad.addColorStop(0, 'rgba(255,255,255,0.1)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    ctx.restore();
+}
 
-function drawWall(b){var pos=worldToScreen(b.position.x,b.position.y);var w=b.bounds.max.x-b.bounds.min.x;var h=b.bounds.max.y-b.bounds.min.y;var sw=w*zoom,sh=h*zoom;ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(b.angle);ctx.fillStyle=b.renderColor||'#3a4358';ctx.fillRect(-sw/2,-sh/2,sw,sh);ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=2/zoom;ctx.strokeRect(-sw/2,-sh/2,sw,sh);ctx.restore();}
+function drawWall(b) {
+    var pos = worldToScreen(b.position.x, b.position.y);
+    var w = b.bounds.max.x - b.bounds.min.x;
+    var h = b.bounds.max.y - b.bounds.min.y;
+    var sw = w * zoom, sh = h * zoom;
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(b.angle);
+    ctx.fillStyle = b.renderColor || '#3a4358';
+    ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2 / zoom;
+    ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    ctx.restore();
+}
 
-function drawWalls(){for(var i=0;i<walls.length;i++){drawWall(walls[i]);}}
+function drawWalls() {
+    for (var i = 0; i < walls.length; i++) {
+        drawWall(walls[i]);
+    }
+}
 
 function carForward(){ return {x: Math.cos(car.chassis.angle), y: Math.sin(car.chassis.angle)}; }
 
-function drawWheel(wl){var r=car.wheelR*zoom,pos=worldToScreen(wl.position.x,wl.position.y);ctx.save();ctx.translate(pos.x,pos.y);ctx.rotate(wl.angle);ctx.fillStyle='#222';ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=Math.max(1.5/zoom,1);ctx.stroke();ctx.strokeStyle='#aaa';ctx.lineWidth=r*0.08;for(var i=0;i<5;i++){var a=(i/5)*Math.PI*2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*r*0.8,Math.sin(a)*r*0.8);ctx.stroke();}ctx.fillStyle='#888';ctx.beginPath();ctx.arc(0,0,r*0.2,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawWheel(wl) {
+    var r = car.wheelR * zoom;
+    var pos = worldToScreen(wl.position.x, wl.position.y);
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(wl.angle);
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = Math.max(1.5 / zoom, 1);
+    ctx.stroke();
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = r * 0.08;
+    for (var i = 0; i < 5; i++) {
+        var a = (i / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8);
+        ctx.stroke();
+    }
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
 
 
 
