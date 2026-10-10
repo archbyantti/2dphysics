@@ -13,7 +13,6 @@ canvas { display: block; cursor: crosshair; }
 </head>
 <body>
 <canvas id="canvas" tabindex="0"></canvas>
-<button id="addBoxBtn" style="position:absolute;top:10px;right:120px;">Add Box</button>
 <div id="info">Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom</div>
 <div id="count">Boxes: 0</div>
 <script>
@@ -167,7 +166,7 @@ function removeBoxAt(sx,sy){var worldPos=screenToWorld(sx,sy);for(var i=boxes.le
 
 function addBox(wx,wy){var s=30+Math.random()*40;var colors=['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22'];var color=colors[Math.floor(Math.random()*colors.length)];var b;if(Math.random()>0.5){var width=s;var height=s*(0.6+Math.random()*0.8);b=Bodies.rectangle(wx,wy,width,height,{restitution:0.3,friction:0.95,density:0.0012,chamfer:{radius:4},slop:0.01,isSensor:false});}else{var sides=Math.floor(3+Math.random()*4);var radius=s/2;b=Bodies.polygon(wx,wy,sides,radius,{restitution:0.3,friction:0.95,density:0.0012,chamfer:{radius:4},slop:0.01,isSensor:false});}if(b.vertices){var minx=b.vertices[0].x,maxx=b.vertices[0].x,miny=b.vertices[0].y,maxy=b.vertices[0].y;for(var i=1;i<b.vertices.length;i++){if(b.vertices[i].x<minx)minx=b.vertices[i].x;if(b.vertices[i].x>maxx)maxx=b.vertices[i].x;if(b.vertices[i].y<miny)miny=b.vertices[i].y;if(b.vertices[i].y>maxy)maxy=b.vertices[i].y;}b._originalWidth=maxx-minx;b._originalHeight=maxy-miny;}else{b._originalWidth=b.bounds.max.x-b.bounds.min.x;b._originalHeight=b.bounds.max.y-b.bounds.min.y;}b.renderColor=color;World.add(world,b);boxes.push(b);updateCount();}
 
-function updateCount(){if(countEl){countEl.textContent='Laatikkoja: '+boxes.length;}}
+function updateCount(){if(countEl){countEl.textContent='Boxes: '+boxes.length;}}
 
 function drawGrid(){var gridSize=50*zoom;if(gridSize<10)return;ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;var startX=panOffset.x%gridSize, startY=panOffset.y%gridSize;for(var x=startX;x<W;x+=gridSize){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}for(var y=startY;y<H;y+=gridSize){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
 
