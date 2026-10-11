@@ -65,7 +65,17 @@ function handleKeyUp(e) {
     switch (e.code) {
         case 'ArrowUp': input.accel = false; break;
         case 'ArrowDown': input.rev = false; break;
+        case 'Space':
+        case 'KeyC': toggleCarCentering(); break;
     }
+}
+
+// Toggle car centering on/off
+function toggleCarCentering() {
+    centerCar = !centerCar;
+    var info = document.getElementById('info');
+    var status = centerCar ? ' (centering ON)' : ' (centering OFF)';
+    info.textContent = 'Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom | Space/C: toggle car centering' + status;
 }
 
 // Handle mouse wheel for zoom (Ctrl or Cmd + scroll)
@@ -77,6 +87,18 @@ function handleWheel(e) {
     var mouseWorldY = (e.clientY - panOffset.y) / zoom;
     zoom *= zoomFactor;
     zoom = Math.max(0.1, Math.min(5, zoom));
-    panOffset.x = e.clientX - mouseWorldX * zoom;
-    panOffset.y = e.clientY - mouseWorldY * zoom;
+    if (!centerCar) {
+        panOffset.x = e.clientX - mouseWorldX * zoom;
+        panOffset.y = e.clientY - mouseWorldY * zoom;
+    }
+}
+
+// Update camera position to follow car if centered
+function updateCameraPosition() {
+    if (!car) return;
+    if (centerCar) {
+        // Calculate offset to center car in screen
+        panOffset.x = W / 2 - car.chassis.position.x * zoom;
+        panOffset.y = H / 2 - car.chassis.position.y * zoom;
+    }
 }
