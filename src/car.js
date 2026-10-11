@@ -1,3 +1,83 @@
+// Car composite structure from Matter.js example
+// Creates car with rounded chassis and wheel axles
+function createCar() {
+    var cx = W / 2;
+    var cy = H / 2 + 50;
+    var wheelSize = 40;
+    var wheelBase = 40;
+    var width = 280;
+    var height = 70;
+    var wheelAOffset = -width * 0.5 + wheelBase;
+    var wheelBOffset = width * 0.5 - wheelBase;
+
+    // Create car composite group for collision isolation
+    var group = Matter.Body.nextGroup(true);
+
+    // Create chassis with rounded corners (chamfer)
+    // Position above wheels so wheels are underneath
+    var chassis = Matter.Bodies.rectangle(cx, cy, width, height, {
+        collisionFilter: { group: group },
+        chamfer: { radius: height * 0.5 },
+        density: 0.0002,
+        friction: 0.1
+    });
+    chassis.collisionFilter.category = 1;
+    chassis.collisionFilter.mask = 2 | 4;
+
+    // Position wheels below chassis
+    var wheelY = cy + wheelSize;  // wheels wheelSize below chassis center
+    var wheelA = Matter.Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, {
+        collisionFilter: { group: group },
+        friction: 0.9,
+        density: 0.004
+    });
+    var wheelB = Matter.Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, {
+        collisionFilter: { group: group },
+        friction: 0.9,
+        density: 0.004
+    });
+
+    wheelA.collisionFilter.category = 1;
+    wheelB.collisionFilter.category = 1;
+    wheelA.collisionFilter.mask = 2 | 4;
+    wheelB.collisionFilter.mask = 2 | 4;
+
+    // Create axles (constraints) - attach to chassis at wheel positions
+    var axleA = Matter.Constraint.create({
+        bodyB: chassis,
+        pointB: { x: wheelAOffset, y: wheelSize },
+        bodyA: wheelA,
+        stiffness: 1,
+        length: 0
+    });
+
+    var axleB = Matter.Constraint.create({
+        bodyB: chassis,
+        pointB: { x: wheelBOffset, y: wheelSize },
+        bodyA: wheelB,
+        stiffness: 1,
+        length: 0
+    });
+
+    // Add car parts to world
+    World.add(world, [chassis, wheelA, wheelB, axleA, axleB]);
+
+    car = {
+        x: cx,
+        y: cy,
+        width: width,
+        height: height,
+        color: '#e74c3c',
+        visible: true,
+        chassis: chassis,
+        wheels: [wheelA, wheelB],
+        joints: [axleA, axleB],
+        wheelR: wheelSize,
+        axOffset: wheelBase,
+        speed: 0
+    };
+}
+
 // Update car motor physics each frame
 function updateCarMotor() {
     if (!car) return;
@@ -18,82 +98,13 @@ function updateCarMotor() {
         tau = 0;
     }
     var delta = 0.01;  // Time step adjustment for stable physics
-    car.wheels.forEach(function (wl) {
+    car.wheels.forEach(function(wl) {
         wl.torque = (wl.torque || 0) + tau;
         // Apply air drag resistance
         wl.torque -= MOTOR.airDrag * wl.angularVelocity * Math.abs(wl.angularVelocity);
-        Body.setAngularVelocity(wl, wl.angularVelocity + wl.torque * delta);
+        Matter.Body.setAngularVelocity(wl, wl.angularVelocity + wl.torque * delta);
         wl.torque = 0;  // Reset for next frame
     });
-}
-
-// Create the car with chassis and wheels
-function createCar() {
-    var cx = W / 2;
-    var cy = H / 2 + 50;
-    var w = 280, ch = 70;
-    var wheelR = 40;
-    var wheelY = cy + ch / 2 - wheelR * 0.2;
-    var axOffset = 100;
-    var wheels = [
-        Bodies.circle(cx - axOffset, wheelY, wheelR, { density: 0.004, friction: 0.9 }),
-        Bodies.circle(cx + axOffset, wheelY, wheelR, { density: 0.004, friction: 0.9 })
-    ];
-    var chassis = Bodies.rectangle(cx, cy, w, ch, { density: 0.002, friction: 0.1 });
-    // Collision categories: car = 1, boxes = 2, walls = 4
-    wheels[0].collisionFilter.category = 1;
-    wheels[1].collisionFilter.category = 1;
-    chassis.collisionFilter.category = 1;
-    wheels[0].collisionFilter.mask = 2 | 4;  // collide with boxes and walls
-    wheels[1].collisionFilter.mask = 2 | 4;
-    chassis.collisionFilter.mask = 2 | 4;
-    // Collision event handler (use wheel bodies instead of car.chassis)
-    Matter.Events.on(wheels[0], 'collisionStart', function(event) {
-        var contacts = event.contacts;
-        for (var i = 0; i < contacts.length; i++) {
-            var collisionBody = contacts[i].body;
-            if (collisionBody.collisionFilter.category === 2 || collisionBody.collisionFilter.category === 4) {
-                playCollisionSound();
-            }
-        }
-    });
-    if (wheels[1]) {
-        Matter.Events.on(wheels[1], 'collisionStart', function(event) {
-            var contacts = event.contacts;
-            for (var i = 0; i < contacts.length; i++) {
-                var collisionBody = contacts[i].body;
-                if (collisionBody.collisionFilter.category === 2 || collisionBody.collisionFilter.category === 4) {
-                    playCollisionSound();
-                }
-            }
-        });
-    }
-    // Add global collision handler to catch any collisions
-    Matter.Events.on(engine, 'collisionStart', function(event) {
-        var pairs = event.pairs;
-        for (var i = 0; i < pairs.length; i++) {
-            var pair = pairs[i];
-            if ((pair.bodyA.collisionFilter.category === 1 || pair.bodyB.collisionFilter.category === 1) &&
-                (pair.bodyA.collisionFilter.category === 2 || pair.bodyB.collisionFilter.category === 2) ||
-                (pair.bodyA.collisionFilter.category === 1 || pair.bodyB.collisionFilter.category === 1) &&
-                (pair.bodyA.collisionFilter.category === 4 || pair.bodyB.collisionFilter.category === 4)) {
-                playCollisionSound();
-            }
-        }
-    });
-    var joints = wheels.map(function(wl, i) {
-        var attachX = (i === 0 ? -axOffset : axOffset);
-        return Constraint.create({
-            bodyA: chassis,
-            bodyB: wl,
-            pointA: { x: attachX, y: wheelY - cy },
-            pointB: { x: 0, y: 0 },
-            stiffness: 0.9,
-            damping: 0.1
-        });
-    });
-    World.add(world, [chassis, wheels[0], wheels[1]].concat(joints));
-    car = { x: cx, y: cy, width: w, height: ch, color: '#e74c3c', visible: true, chassis: chassis, wheels: wheels, joints: joints, wheelR: wheelR, axOffset: axOffset, speed: 0 };
 }
 
 // Get car forward direction vector
