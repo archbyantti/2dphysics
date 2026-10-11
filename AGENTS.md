@@ -52,7 +52,7 @@ The codebase is intentionally minimal. Follow these conventions when adding or m
 - **Naming:** camelCase for functions and variables. Short abbreviated names keep the scripts small (e.g., `wl` for wheel, `sz` for size).
 - **Line length:** Aim for under 120 characters; split longer expressions with parentheses.
 - **Semicolons:** Always use semicolons.
-- **Comments:** Use Finnish-language comments where appropriate since the UI is in Finnish.
+- **Comments:** All code and comments must be in English, even when instructed in Finnish.
 
 ## File Updates
 
