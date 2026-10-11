@@ -24,6 +24,7 @@ function startLoop() {
     function loop() {
         updateCarMotor();
         Engine.update(engine, 1000 / 60);
+        updateCameraPosition();
         draw();
         requestAnimationFrame(loop);
     }

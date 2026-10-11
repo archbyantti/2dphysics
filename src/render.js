@@ -41,11 +41,13 @@ function drawBox(b) {
     ctx.lineWidth = 1.5 / zoom;
     ctx.strokeRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
     // Add gradient shading
-    var grad = ctx.createLinearGradient(0, -scaledH / 2, 0, scaledH / 2);
-    grad.addColorStop(0, 'rgba(255,255,255,0.1)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    if (scaledH > 0 && !isNaN(scaledH) && !isFinite(scaledH) === false) {
+        var grad = ctx.createLinearGradient(0, -scaledH / 2, 0, scaledH / 2);
+        grad.addColorStop(0, 'rgba(255,255,255,0.1)');
+        grad.addColorStop(0.5, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    }
     ctx.restore();
 }
 
@@ -124,6 +126,7 @@ function drawCar() {
 
 // Main render loop
 function draw() {
+    if (!isFinite(zoom) || zoom <= 0) return;
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, W, H);
     drawGrid();
@@ -132,4 +135,5 @@ function draw() {
         drawBox(boxes[i]);
     }
     drawCar();
+    updateCameraPosition();
 }
