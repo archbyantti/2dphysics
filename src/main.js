@@ -23,6 +23,7 @@ function init() {
 function startLoop() {
     function loop() {
         updateCarMotor();
+        updateEngineSound();
         Engine.update(engine, 1000 / 60);
         updateCameraPosition();
         draw();

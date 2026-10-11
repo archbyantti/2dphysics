@@ -40,10 +40,47 @@ function createCar() {
         Bodies.circle(cx + axOffset, wheelY, wheelR, { density: 0.004, friction: 0.9 })
     ];
     var chassis = Bodies.rectangle(cx, cy, w, ch, { density: 0.002, friction: 0.1 });
-    // Prevent wheel-wheeled collisions
-    wheels[0].collisionFilter.group = -1;
-    wheels[1].collisionFilter.group = -1;
-    chassis.collisionFilter.group = -1;
+    // Collision categories: car = 1, boxes = 2, walls = 4
+    wheels[0].collisionFilter.category = 1;
+    wheels[1].collisionFilter.category = 1;
+    chassis.collisionFilter.category = 1;
+    wheels[0].collisionFilter.mask = 2 | 4;  // collide with boxes and walls
+    wheels[1].collisionFilter.mask = 2 | 4;
+    chassis.collisionFilter.mask = 2 | 4;
+    // Collision event handler (use wheel bodies instead of car.chassis)
+    Matter.Events.on(wheels[0], 'collisionStart', function(event) {
+        var contacts = event.contacts;
+        for (var i = 0; i < contacts.length; i++) {
+            var collisionBody = contacts[i].body;
+            if (collisionBody.collisionFilter.category === 2 || collisionBody.collisionFilter.category === 4) {
+                playCollisionSound();
+            }
+        }
+    });
+    if (wheels[1]) {
+        Matter.Events.on(wheels[1], 'collisionStart', function(event) {
+            var contacts = event.contacts;
+            for (var i = 0; i < contacts.length; i++) {
+                var collisionBody = contacts[i].body;
+                if (collisionBody.collisionFilter.category === 2 || collisionBody.collisionFilter.category === 4) {
+                    playCollisionSound();
+                }
+            }
+        });
+    }
+    // Add global collision handler to catch any collisions
+    Matter.Events.on(engine, 'collisionStart', function(event) {
+        var pairs = event.pairs;
+        for (var i = 0; i < pairs.length; i++) {
+            var pair = pairs[i];
+            if ((pair.bodyA.collisionFilter.category === 1 || pair.bodyB.collisionFilter.category === 1) &&
+                (pair.bodyA.collisionFilter.category === 2 || pair.bodyB.collisionFilter.category === 2) ||
+                (pair.bodyA.collisionFilter.category === 1 || pair.bodyB.collisionFilter.category === 1) &&
+                (pair.bodyA.collisionFilter.category === 4 || pair.bodyB.collisionFilter.category === 4)) {
+                playCollisionSound();
+            }
+        }
+    });
     var joints = wheels.map(function(wl, i) {
         var attachX = (i === 0 ? -axOffset : axOffset);
         return Constraint.create({
