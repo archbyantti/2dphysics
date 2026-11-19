@@ -58,6 +58,7 @@ function handleKeyDown(e) {
     switch (e.code) {
         case 'ArrowUp': input.accel = true; break;
         case 'ArrowDown': input.rev = true; break;
+        case 'Space': input.brake = true; break;
     }
 }
 
@@ -65,7 +66,7 @@ function handleKeyUp(e) {
     switch (e.code) {
         case 'ArrowUp': input.accel = false; break;
         case 'ArrowDown': input.rev = false; break;
-        case 'Space':
+        case 'Space': input.brake = false; break;
         case 'KeyC': toggleCarCentering(); break;
     }
 }
@@ -75,7 +76,7 @@ function toggleCarCentering() {
     centerCar = !centerCar;
     var info = document.getElementById('info');
     var status = centerCar ? ' (centering ON)' : ' (centering OFF)';
-    info.textContent = 'Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom | Space/C: toggle car centering' + status;
+    info.textContent = 'Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom | C: toggle car centering | Space: brake';
 }
 
 // Handle mouse wheel for zoom (Ctrl or Cmd + scroll)

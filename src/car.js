@@ -3,7 +3,7 @@
 function createCar() {
     var cx = W / 2;
     var cy = H / 2 + 50;
-    var wheelSize = 40;
+    var wheelSize = 48;
     var wheelBase = 40;
     var width = 280;
     var height = 70;
@@ -100,6 +100,10 @@ function updateCarMotor() {
     var delta = 0.01;  // Time step adjustment for stable physics
     car.wheels.forEach(function(wl) {
         wl.torque = (wl.torque || 0) + tau;
+        // Apply brake when space is pressed
+        if (input.brake) {
+            Matter.Body.setAngularVelocity(wl, wl.angularVelocity * 0.90);
+        }
         // Apply air drag resistance
         wl.torque -= MOTOR.airDrag * wl.angularVelocity * Math.abs(wl.angularVelocity);
         Matter.Body.setAngularVelocity(wl, wl.angularVelocity + wl.torque * delta);

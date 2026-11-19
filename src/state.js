@@ -25,6 +25,6 @@ var MOTOR = {
 };
 
 // Car input state
-var input = { accel: false, rev: false };
+var input = { accel: false, rev: false, brake: false };
 // Camera centering state
 var centerCar = false;  // true = camera follows car, false = manual panning
