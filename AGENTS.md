@@ -43,6 +43,45 @@ or on Unix-like shells:
 for f in src/*.js; do node --check "$f"; done
 ```
 
+## Simulation Testing
+
+The simulation can be launched directly by opening `src/index.html` in a browser — no server is required. When making changes to the codebase, you can:
+
+1. **Launch the simulation** by opening `src/index.html` in a browser
+2. **Check for console errors** by opening the browser's developer tools (F12) and monitoring the Console tab
+3. **Verify visual output** and interaction behavior before committing changes
+
+This workflow allows for quick iteration and bug detection during development.
+
+## Automated Testing with Playwright
+
+To automate simulation testing, create a test script (e.g., `test-simulation.js`):
+
+```javascript
+const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto('file:///E:/dev/physics/src/index.html');
+  
+  // Test box creation
+  for (let i = 0; i < 5; i++) {
+    await page.click('canvas');
+  }
+  
+  await page.screenshot({ path: 'debug.png' });
+  await browser.close();
+})();
+```
+
+Run with: `node test-simulation.js`
+
+This approach automates:
+- Box spawning (click on canvas)
+- Console error checking
+- Visual validation via screenshots
+
 ## Coding Style & Naming Conventions
 
 The codebase is intentionally minimal. Follow these conventions when adding or modifying code:
