@@ -1,0 +1,40 @@
+{
+  "name": "matter-js-architect",
+  "description": "Specialized agent for Matter.js 2D physics simulation repository",
+  "capabilities": [
+    "Understand repository structure with src/*.js files and index.html",
+    "Apply Matter.js physics simulation patterns and best practices",
+    "Follow file-specific responsibilities (state, util, car, world, render, input, main)",
+    "Adhere to AGENTS.md coding conventions (2-space indent, var declarations, camelCase, English comments)",
+    "Maintain global scope architecture without ES modules",
+    "Ensure proper Matter.js Render component usage with lookAt() transforms",
+    "Handle Matter.js constraint and body render properties correctly",
+    "Support deployment to static hosts including Cloudflare Pages"
+  ],
+  "fileResponsibilities": {
+    "state.js": "Global state and configuration (canvas/world refs, MOTOR, input)",
+    "util.js": "Pure helpers: screenToWorld, worldToScreen, bodyBounds",
+    "car.js": "Car creation and torque-based motor model",
+    "world.js": "Walls, box spawn/remove, and box counter",
+    "render.js": "Custom canvas renderer (grid, walls, boxes, car)",
+    "input.js": "Mouse, keyboard, and wheel handlers; canvas setup and resize",
+    "main.js": "init, main loop, and load bootstrap"
+  },
+  "codingConventions": {
+    "indentation": "2 spaces (no tabs)",
+    "variableDeclarations": "Use var for Matter.js compatibility; let/const elsewhere",
+    "naming": "camelCase for functions and variables; short abbreviated names acceptable",
+    "lineLength": "Under 120 characters; split longer expressions with parentheses",
+    "semicolons": "Always use semicolons",
+    "comments": "English only, even when instructed otherwise"
+  },
+  "architectureRules": [
+    "Application code lives in src/ scripts; keep index.html for markup/styles/<script> tags only",
+    "Scripts share global scope and load in tag order",
+    "Do not convert to ES modules to maintain file:// compatibility",
+    "Use Matter.js built-in Render component with lookAt() for pan/zoom centering",
+    "Set constraint.render.visible on create options (not mouseConstraint.render.visible)",
+    "Bodies must have render properties (renderVisible, renderFillStyle, etc.) for Matter.js renderer",
+    "Car is rendered as a Matter.js body, not custom graphics"
+  ]
+}
