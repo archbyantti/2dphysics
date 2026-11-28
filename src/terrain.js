@@ -19,7 +19,15 @@ var TERRAIN = {
   jumpGrowth: 0.12,     // Each further jump is this much bigger (relative to the first)...
   jumpMaxHeight: 420,   // ...up to this lip height, px
   dropCrestR: 1500,     // Drop-ins: curve radius over the top (follows a car's flight at ~25 px/step)...
-  dropBottomR: 1800     // ...and at the bottom, px
+  dropBottomR: 1800,    // ...and at the bottom, px
+  pondEveryJumps: 3,    // A pond of water after every third jump (300 m, 600 m, ...)
+  pondGap: 120,         // Flat ground between the foot of the jump and the pond, px
+  pondBank: 450,        // Width of each sloping bank, px (max slope ~20 deg)
+  pondDepth: 105,       // Depth of the first pond, px (wheels under, body half in)...
+  pondDepthMax: 135,    // ...growing to this
+  pondBottom: 200,      // Flat bottom of the first pond, px...
+  pondBottomGrowth: 100, // ...this much wider in each further pond...
+  pondBottomMax: 700    // ...up to this
 };
 
 var terrainChunks = new Map();   // Chunk index -> { index, bodies, x0, x1 }
@@ -31,9 +39,47 @@ function groundHeightAt(x) {
   return baseHeightAt(x) - jumpRise(x);
 }
 
-// Ground y without the ramps: the hills, lowered by every drop-in passed so far
+// Ground y without the ramps: the hills, lowered by every drop-in passed so far, and pond basins
 function baseHeightAt(x) {
-  return hillsHeightAt(x) + dropOffset(x);
+  return hillsHeightAt(x) + dropOffset(x) + pondDip(x);
+}
+
+// Number of the jump whose zone contains world x (0 before the first jump)
+function jumpNumberAt(x) {
+  var period = TERRAIN.jumpEveryM * PX_PER_M;
+  return Math.max(0, Math.round((x - START_X + TERRAIN.jumpLipBefore) / period));
+}
+
+// The pond of the jump zone around x, or null. It may not reach x: check pond.x0 / pond.x1.
+function pondNear(x) {
+  var m = jumpNumberAt(x);
+  return m >= 1 ? jumpSpec(m).pond : null;
+}
+
+// The pond whose water spans x, or null
+function pondAt(x) {
+  var p = pondNear(x);
+  return p && x > p.x0 && x < p.x1 ? p : null;
+}
+
+// Water surface y of a pond: its banks end at the same height (the ground is graded flat there)
+function pondLevel(p) {
+  if (p.level === undefined) p.level = groundHeightAt(p.x0);
+  return p.level;
+}
+
+// Water surface y at x, or null where there is no water
+function waterLevelAt(x) {
+  var p = pondAt(x);
+  return p ? pondLevel(p) : null;
+}
+
+// How far a pond basin lowers the ground at x: sloping banks with a cosine profile, a flat bottom
+function pondDip(x) {
+  var p = pondAt(x);
+  if (!p) return 0;
+  var d = Math.min(x - p.x0, p.x1 - x);
+  return d >= p.bank ? p.depth : p.depth * (1 - Math.cos(Math.PI * d / p.bank)) / 2;
 }
 
 // How far drop-ins have lowered the ground at x (sum of all earlier drops, plus the current one)
@@ -77,6 +123,7 @@ function jumpLipX(m) {
 function jumpSpec(m) {
   if (jumpSpecs.has(m)) return jumpSpecs.get(m);
   var spec;
+  var hasPond = m % TERRAIN.pondEveryJumps === 0;
   if (m === 1) {
     spec = { kind: 'kicker', height: TERRAIN.jumpHeight, length: 500, curve: 2, table: 0, landDrop: 1, landLength: 0 };
   } else {
@@ -84,6 +131,8 @@ function jumpSpec(m) {
     var h = Math.min(TERRAIN.jumpMaxHeight, TERRAIN.jumpHeight * size * (0.85 + 0.3 * jumpRand(m, 1)));
     var pick = jumpRand(m, 2);
     var kind = pick < 0.4 ? 'kicker' : pick < 0.6 ? 'tabletop' : pick < 0.8 ? 'ramp' : 'landing';
+    // A pond follows right after the jump, so it must not end in a long landing downhill
+    if (hasPond) kind = pick < 0.6 ? 'kicker' : 'ramp';
     var curve = kind === 'ramp' ? 1.15 : 1.7 + 0.9 * jumpRand(m, 3);
     var lipDeg = kind === 'ramp' ? 22 + 6 * jumpRand(m, 4) : 27 + 10 * jumpRand(m, 4);
     spec = {
@@ -129,7 +178,23 @@ function jumpSpec(m) {
   }
   spec.dropStart = spec.rampStart - spec.runout - spec.descent;
   spec.start = spec.dropStart;
-  spec.end = spec.lip + TERRAIN.segW + spec.landLength;
+  spec.rampEnd = spec.lip + TERRAIN.segW + spec.landLength;
+  // Pond: a basin a little after the jump. A fast car can fly over it; a slow one drives through.
+  spec.pond = null;
+  if (hasPond) {
+    var n = m / TERRAIN.pondEveryJumps;
+    var bank = TERRAIN.pondBank;
+    var bottom = Math.min(TERRAIN.pondBottomMax, TERRAIN.pondBottom + TERRAIN.pondBottomGrowth * (n - 1));
+    var p0 = spec.rampEnd + TERRAIN.pondGap;
+    spec.pond = {
+      x0: p0,
+      x1: p0 + 2 * bank + bottom,
+      bank: bank,
+      depth: Math.min(TERRAIN.pondDepthMax, TERRAIN.pondDepth + 10 * (n - 1))
+    };
+  }
+  // Flat ground after the pond keeps the hills from blending back in under its bank
+  spec.end = spec.pond ? spec.pond.x1 + 200 : spec.rampEnd;
   jumpSpecs.set(m, spec);
   return spec;
 }
@@ -140,7 +205,7 @@ function jumpRise(x) {
   var m = Math.round((x - START_X + TERRAIN.jumpLipBefore) / period);
   if (m < 1) return 0;
   var j = jumpSpec(m);
-  if (x <= j.start || x >= j.end) return 0;
+  if (x <= j.start || x >= j.rampEnd) return 0;
   if (x < j.rampStart) return 0;  // Drop-in and run-out are part of the base ground (dropOffset)
   var d = x - j.rampStart;
   if (d <= j.length) return j.height * Math.pow(d / j.length, j.curve);
@@ -168,6 +233,13 @@ function hillsHeightAt(x) {
   if (x <= z0 || x >= z1) return raw;
   var h0 = rawHillsAt(z0), h1 = rawHillsAt(z1);
   var line = h0 + (h1 - h0) * (x - z0) / (z1 - z0);
+  // A pond needs level banks: the line runs flat across it and meets the straight line again after it
+  var p = j.pond;
+  if (p) {
+    var hp = h0 + (h1 - h0) * (p.x1 - z0) / (z1 - z0);
+    if (x < p.x0) line = h0 + (hp - h0) * (x - z0) / (p.x0 - z0);
+    else if (x <= p.x1) line = hp;
+  }
   var w = Math.min(1, (x - z0) / 400, (z1 - x) / 400);
   w = w * w * (3 - 2 * w);
   return raw * (1 - w) + line * w;

@@ -145,9 +145,9 @@ function check(name, ok, detail) {
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'simulation-test.png') });
 
-  // Terrain streams with the car: jump 600 m ahead and keep driving on solid ground.
+  // Terrain streams with the car: jump 640 m ahead (past the 600 m pond) and keep driving on solid ground.
   await page.evaluate(() => {
-    var x = START_X + 600 * PX_PER_M;
+    var x = START_X + 640 * PX_PER_M;
     World.remove(world, car.all);
     updateTerrain(x);
     createCar(x);
@@ -199,11 +199,48 @@ function check(name, ok, detail) {
   const landed = await soundCount('thump');
   check('landing after the jump thumps', landed >= 1, landed);
 
+  // Ponds: one after every third jump (300 m, 600 m, ...) and none elsewhere.
+  const ponds = await page.evaluate(() => [1, 2, 3, 4, 5, 6, 9].map((m) => !!jumpSpec(m).pond));
+  check('a pond every 300 m', ponds.join() === 'false,false,true,false,false,true,true', ponds.join());
+  // Dropped into the pond, the car splashes and sits on the bottom half under water; a box floats.
+  await page.evaluate(() => {
+    var p = jumpSpec(3).pond, x = (p.x0 + p.x1) / 2;
+    World.remove(world, car.all);
+    World.remove(world, boxes);
+    boxes.length = 0;
+    updateTerrain(x);
+    createCar(x);
+    car.all.slice(0, 3).forEach((b) => Matter.Body.translate(b, { x: 0, y: -300 }));
+    addBox(x + 320, pondLevel(p) - 200);
+    window.__sounds.length = 0;
+  });
+  // Spray drops sink back into the water quickly, so look for them right after the car hits it
+  const sprayed = await page.waitForFunction(() => particles.some((p) => p.sinkAt !== null), null,
+    { timeout: 1500, polling: 'raf' }).then(() => true, () => false);
+  await page.waitForTimeout(2500);
+  const wet = await page.evaluate(() => ({
+    splashes: window.__sounds.filter((s) => s === 'splash').length,
+    frac: car.chassis.wetFrac,
+    gap: groundHeightAt(car.wheels[0].position.x) - (car.wheels[0].position.y + car.wheelR),
+    box: boxes.length ? Math.abs(boxes[0].position.y - waterLevelAt(boxes[0].position.x)) : Infinity
+  }));
+  check('falling into a pond splashes', wet.splashes >= 1 && sprayed, wet.splashes + ' sounds, spray ' + sprayed);
+  check('car sits on the pond bottom partly under water', wet.frac > 0.2 && wet.frac < 0.9 && Math.abs(wet.gap) < 8,
+    'wet ' + wet.frac.toFixed(2) + ', gap ' + wet.gap.toFixed(1) + ' px');
+  check('a box floats on the water', wet.box < 30, wet.box.toFixed(1) + ' px from the surface');
+  // The car can drive up the far bank and out of the pond.
+  await page.keyboard.down('ArrowUp');
+  const out = await page.waitForFunction(() => car.chassis.position.x > jumpSpec(3).pond.x1 + 100, null,
+    { timeout: 8000, polling: 'raf' }).then(() => true, () => false);
+  await page.keyboard.up('ArrowUp');
+  check('car drives out of the pond', out);
+
   // The brake stops a car rolling back down a hill and holds it there.
   await page.evaluate(() => {
     var best = 0, bx = 0;
     for (var x = 3000; x < 30000; x += 20) {
       if (jumpRise(x - 400) || jumpRise(x + 400) || jumpRise(x)) continue;
+      if (pondAt(x - 400) || pondAt(x + 400) || pondAt(x)) continue;
       var sl = (groundHeightAt(x - 150) - groundHeightAt(x + 150)) / 300;  // Rising to the right
       if (sl > best) { best = sl; bx = x; }
     }

@@ -19,7 +19,8 @@ function spawnParticle(o) {
     color: o.color || '#ffffff',
     soft: !!o.soft,          // Soft sprite (smoke, dust) or solid dot (mud)
     bounce: !!o.bounce,      // Bounces off the ground instead of falling through
-    layer: o.layer || 'front'
+    layer: o.layer || 'front',
+    sinkAt: o.sinkAt === undefined ? null : o.sinkAt  // Water drop: gone once it falls back below this y
   });
 }
 
@@ -44,6 +45,7 @@ function updateParticles(ms) {
       p.vy *= -0.3;
       p.vx *= 0.5;
     }
+    if (p.sinkAt !== null && p.vy > 0 && p.y > p.sinkAt) continue;
     particles[keep++] = p;
   }
   particles.length = keep;

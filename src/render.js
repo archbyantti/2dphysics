@@ -72,8 +72,10 @@ async function initRenderer() {
   scene.boxes = new PIXI.Container();
   scene.back = new PIXI.Container();    // Particles behind the car (smoke)
   scene.carLayer = new PIXI.Container();
+  scene.water = new PIXI.Container();   // Ponds, over the car so that what is in them looks submerged
   scene.front = new PIXI.Container();   // Particles in front of the car (dust, mud)
-  scene.world.addChild(scene.terrain, scene.ramps, scene.walls, scene.boxes, scene.back, scene.carLayer, scene.front);
+  scene.world.addChild(scene.terrain, scene.ramps, scene.walls, scene.boxes, scene.back, scene.carLayer,
+    scene.water, scene.front);
   app.stage.addChild(scene.sky, scene.palmsFar, scene.hillsNear, scene.palmsNear, scene.world);
 
   // Fixed star field (fractions of the screen), drawn with a slight parallax
@@ -81,7 +83,8 @@ async function initRenderer() {
   var seed = 7;
   var rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   for (var i = 0; i < 90; i++) scene.stars.push({ x: rnd(), y: rnd() * 0.6, r: 0.6 + rnd() * 1.2, a: 0.2 + rnd() * 0.5 });
-  scene.chunkGfx = new Map();  // Terrain chunk -> { ground, ramps } containers
+  scene.chunkGfx = new Map();  // Terrain chunk -> { ground, ramps, water } containers
+  scene.ponds = [];            // { pond, surface } of the ponds on screen; the surface ripples
 
   scene.wallsFor = null;      // The walls array the wall graphics were built from
   scene.boxGfx = new Map();   // Box body -> Graphics
@@ -238,7 +241,7 @@ function buildMarker(x, label) {
 
 // Wooden jump ramp: planks between the ramp surface and the hills underneath
 function buildRamp(js) {
-  var x0 = js.rampStart, x1 = js.end;
+  var x0 = js.rampStart, x1 = js.rampEnd;
   // Sample every 10 px, plus the exact corners at the lip so the drop stays crisp
   var xs = [];
   for (var x = x0; x < x1; x += 10) xs.push(x);
@@ -263,11 +266,46 @@ function buildRamp(js) {
   return g;
 }
 
+// Water of one pond: a translucent body down to the ground, and a rippling surface line (see syncPonds)
+function buildPond(p) {
+  var lvl = pondLevel(p);
+  var pts = [{ x: p.x0, y: lvl }];
+  for (var x = p.x0 + 10; x < p.x1; x += 10) pts.push({ x: x, y: groundHeightAt(x) });
+  pts.push({ x: p.x1, y: lvl });
+  var c = new PIXI.Container();
+  var body = new PIXI.Graphics();
+  body.poly(pts).fill({ color: 0x2b7fc0, alpha: 0.55 });
+  // Lighter water near the surface
+  var shallow = pts.map(function (q) { return { x: q.x, y: Math.min(q.y, lvl + 18) }; });
+  body.poly(shallow).fill({ color: 0x7cc4ea, alpha: 0.2 });
+  var surface = new PIXI.Graphics();
+  c.addChild(body, surface);
+  scene.ponds.push({ pond: p, surface: surface });
+  return c;
+}
+
+// Redraw the surface line of each pond with small travelling waves
+function syncPonds() {
+  var t = performance.now() / 1000;
+  scene.ponds = scene.ponds.filter(function (o) { return !o.surface.destroyed; });
+  scene.ponds.forEach(function (o) {
+    var p = o.pond, lvl = pondLevel(p), g = o.surface;
+    g.clear();
+    g.moveTo(p.x0, lvl);
+    for (var x = p.x0 + 12; x < p.x1; x += 12) {
+      g.lineTo(x, lvl + 1.6 * Math.sin(x / 37 - t * 2.2) + 1 * Math.sin(x / 13 + t * 3.1));
+    }
+    g.lineTo(p.x1, lvl);
+    g.stroke({ width: 3, color: 0xbfe6f7, alpha: 0.85, join: 'round' });
+  });
+}
+
 // Ground of one chunk (deep dirt, a lighter topsoil band, grass on top, distance markers) and,
 // separately, the jump ramps that start in it
 function buildChunk(ch) {
   var c = new PIXI.Container();
   var ramps = new PIXI.Container();
+  var water = new PIXI.Container();
   // Overlap one quad into the next chunk so no seam shows between chunks
   var top = surfacePoints(ch.x0, ch.x1 + TERRAIN.segW);
   var last = top[top.length - 1];
@@ -284,6 +322,7 @@ function buildChunk(ch) {
   for (var m = Math.max(1, Math.floor((ch.x0 - START_X) / period)); jumpSpec(m).rampStart < ch.x1; m++) {
     var js = jumpSpec(m);
     if (js.rampStart >= ch.x0 && js.rampStart < ch.x1) ramps.addChild(buildRamp(js));
+    if (js.pond && js.pond.x0 >= ch.x0 && js.pond.x0 < ch.x1) water.addChild(buildPond(js.pond));
   }
   var step = 50 * PX_PER_M;
   var first = Math.ceil((ch.x0 - START_X) / step);
@@ -292,7 +331,7 @@ function buildChunk(ch) {
   }
   // START sign behind the car's starting spot, so the car does not hide it
   if (ch.index === 0) c.addChild(buildMarker(START_X - 210, 'START'));
-  return { ground: c, ramps: ramps };
+  return { ground: c, ramps: ramps, water: water };
 }
 
 // Build graphics for newly loaded chunks and destroy those of unloaded ones
@@ -302,6 +341,7 @@ function syncTerrain() {
       var c = buildChunk(ch);
       scene.terrain.addChild(c.ground);
       scene.ramps.addChild(c.ramps);
+      scene.water.addChild(c.water);
       scene.chunkGfx.set(ch, c);
     }
   });
@@ -309,6 +349,7 @@ function syncTerrain() {
     if (terrainChunks.get(ch.index) !== ch) {
       c.ground.destroy({ children: true });
       c.ramps.destroy({ children: true });
+      c.water.destroy({ children: true });
       scene.chunkGfx.delete(ch);
     }
   });
@@ -464,6 +505,7 @@ function draw() {
   scene.world.position.set(panOffset.x, panOffset.y);
   scene.world.scale.set(zoom);
   syncTerrain();
+  syncPonds();
   syncWalls();
   syncBoxes();
   syncCar();

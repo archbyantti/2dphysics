@@ -11,7 +11,7 @@ var IMPACT = {
   thumpMinSpeed: 6,     // Car hitting the ground: only real drops, not rolling over seams
   minGap: 0.06          // Seconds between sounds of the same kind
 };
-var lastImpactAt = { knock: 0, thump: 0 };
+var lastImpactAt = { knock: 0, thump: 0, splash: 0 };
 
 // Initialize audio context on first user interaction
 function initAudio() {
@@ -156,12 +156,17 @@ function toneHit(f0, f1, gain, decay, at) {
 }
 
 // kind 'knock': a box hitting something (short wooden knock).
-// kind 'thump': the car landing (deep thud plus a little suspension rattle). strength is 0..1.
+// kind 'thump': the car landing (deep thud plus a little suspension rattle).
+// kind 'splash': something hitting the water (a hiss of spray over a low gulp). strength is 0..1.
 function playCollisionSound(kind, strength) {
   if (!audioCtx) return;
   var s = strength === undefined ? 0.5 : strength;
   var at = audioCtx.currentTime + 0.005;
-  if (kind === 'thump') {
+  if (kind === 'splash') {
+    noiseHit('bandpass', 1400 + Math.random() * 600, 0.7, 0.5 * s, 0.25 + 0.35 * s, at);
+    noiseHit('lowpass', 450, 0.8, 0.5 * s, 0.18 + 0.2 * s, at);
+    toneHit(170 + Math.random() * 40, 55, 0.3 * s, 0.22, at + 0.01);
+  } else if (kind === 'thump') {
     toneHit(110, 42, 0.7 * s, 0.35, at);
     noiseHit('lowpass', 380, 0.7, 0.45 * s, 0.14, at);
     noiseHit('bandpass', 2600, 4, 0.06 * s, 0.22, at + 0.02);
@@ -169,6 +174,14 @@ function playCollisionSound(kind, strength) {
     noiseHit('bandpass', 900 + Math.random() * 700, 3, 0.3 * s, 0.07, at);
     toneHit(240 + Math.random() * 60, 150, 0.15 * s, 0.07, at);
   }
+}
+
+// A splash, at most one per IMPACT.minGap
+function playSplash(strength) {
+  var now = performance.now() / 1000;
+  if (!audioCtx || now - lastImpactAt.splash < IMPACT.minGap) return;
+  lastImpactAt.splash = now;
+  playCollisionSound('splash', strength);
 }
 
 // Initialize audio on first user interaction

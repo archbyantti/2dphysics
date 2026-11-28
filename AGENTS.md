@@ -11,10 +11,11 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | src/util.js              | Helpers: `screenToWorld`, `worldToScreen`, `impactSpeed`, `pairHas`              |
 | src/sound.js             | Procedural Web Audio: engine voice driven by `car.engine`, box knock, landing thump |
 | src/car.js               | Car creation, engine + automatic 4+R gearbox (`car.engine`), and `resetCar` (R) |
-| src/terrain.js           | Endless ground: hills and jumps (every 100 m) grow with distance; `jumpSpec`, streaming |
+| src/terrain.js           | Endless ground: hills and jumps (every 100 m) grow with distance; ponds; `jumpSpec`, streaming |
 | src/world.js             | Start wall, box spawn/remove, lost-box cleanup, box counter, distance/gear HUD   |
+| src/water.js             | Pond water physics: buoyancy and drag per substep (`applyWater`), `WATER` tuning |
 | src/particles.js         | Particle pool (`spawnParticle`, update, draw by layer); decoration, not physics |
-| src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust; tuning in `FX`             |
+| src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust, water splashes/spray; `FX` |
 | src/render.js            | PixiJS (WebGL) renderer: mirrors bodies, particles and the car as Pixi objects   |
 | src/input.js             | Mouse, keyboard, and wheel handlers; resize; smooth look-ahead camera follow    |
 | src/main.js              | `init`, the substepped main loop, and the `load` bootstrap                       |
@@ -53,7 +54,8 @@ verify the visual output and interactions.
 resting on the terrain, box spawning and the counter, box knocks, the cabin roof, engine revs, upshifts and the
 gear HUD, Shift+click removal,
 effects while driving, the distance HUD, braking into reverse, the C-key status text, terrain streaming 600 m out, silence while
-rolling, a thump when the car is dropped, a jump ramp launching the car (and the landing thump), the R reset, the
+rolling, a thump when the car is dropped, a jump ramp launching the car (and the landing thump), ponds every 300 m
+(splash, a car half under water on the bottom, a floating box, driving out), the R reset, the
 renderer following a viewport resize, and no console errors. It saves `test/screenshots/simulation-test.png` and
 exits with code 1 if any check fails. Add a check here when you add a feature.
 
@@ -103,20 +105,26 @@ The application follows a straightforward loop:
    the jumps from the third on start with a drop-in: a steep downhill that leaves the ground permanently lower
    (`dropOffset`), so the car gains real speed. Its top must curve over at least as gently as a car's flight
    (`TERRAIN.dropCrestR`) or the car takes off and loses the speed on landing. The hills are graded flat under
-   each jump zone, so ramps and drop-ins keep their designed shape.
+   each jump zone, so ramps and drop-ins keep their designed shape. Every third jump (300 m, 600 m, ...) is a
+   kicker or ramp followed by a pond (`spec.pond`, a basin in `baseHeightAt`): the grading runs level across
+   it, so both banks end at the water level (`pondLevel`). A fast car flies over it, a slow one drives through.
+   Use `waterLevelAt(x)` / `pondAt(x)` for the water. `applyWater` (`src/water.js`) clips each body's polygon
+   against the water and applies lift at the centre of the submerged part, plus drag; boxes float, the car
+   does not.
 2. **PixiJS Renderer** (`src/render.js`, PixiJS 8 via WebGL) — Each body gets a Pixi display object whose shape
    is built once in body-local coordinates; per frame only position and rotation are copied from Matter.js. The
    world lives in one container whose position/scale are the pan offset and zoom. Pixi's own ticker is off: the main
    loop calls `draw()`, which ends with `app.render()`. Layer order: sky (stars, two far hill layers), far palms, near hills, near palms (all screen space with
    parallax; palm sprites are pooled), terrain chunks
    with distance markers, walls, boxes,
-   `back` particles (smoke), car, `front` particles (dust, mud). Particles are updated once per frame with the
+   `back` particles (smoke), car, pond water (translucent, so the car looks submerged), `front` particles
+   (dust, mud, water drops). Particles are updated once per frame with the
    frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is not used.
 3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
 4. **Main Loop** — `requestAnimationFrame` drives the frame. Each frame advances physics (and the car motor) by
    the real elapsed time × `SIM_SPEED`, split into equal substeps of at most `MAX_STEP_MS`, so motion is smooth and
    equally fast on any refresh rate. Code that runs per substep must scale per-step effects by the step length
-   (see `updateCarMotor`) and read velocities with `Body.getVelocity` / `getAngularVelocity`. Sound, camera, and
+   (see `updateCarMotor`, `applyWater`) and read velocities with `Body.getVelocity` / `getAngularVelocity`. Sound, camera, and
    drawing update once per frame.
 
 ## Agent-Specific Instructions

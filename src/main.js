@@ -37,6 +37,7 @@ function startLoop() {
       for (var i = 0; i < n; i++) {
         updateCarMotor(h);
         updateDampers(h);
+        applyWater(h);
         Engine.update(engine, h);
       }
       updateEffects(simMs);

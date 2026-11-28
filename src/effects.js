@@ -1,4 +1,5 @@
-// Visual effect emitters: exhaust smoke, dust and mud from the tyres, dust from hard impacts.
+// Visual effect emitters: exhaust smoke, dust and mud from the tyres, dust from hard impacts,
+// splashes and spray in the ponds.
 // Emitters only spawn particles (see particles.js); they never change the physics.
 
 var FX = {
@@ -7,10 +8,13 @@ var FX = {
   dirtMaxRate: 90,        // Tyre dirt particles per second per wheel, at most
   mudShare: 0.3,          // Share of tyre dirt that is heavy mud instead of dust
   impactMinSpeed: 3,      // Impact speed (px per 60 Hz step, along the contact normal) for dust
-  landingMinSpeed: 6      // Same for the car hitting the ground (a drop of roughly 45 px or more)
+  landingMinSpeed: 6,     // Same for the car hitting the ground (a drop of roughly 45 px or more)
+  splashMinSpeed: 1.5,    // Speed (px per 60 Hz step) a body needs entering the water to splash
+  sprayMaxRate: 120,      // Spray drops per second from a wheel churning at the surface, at most
+  wakeMinSpeed: 2.5       // The car body pushes a bow wave above this speed (px per 60 Hz step)
 };
 
-var fxCarry = { smoke: 0, dirt: [0, 0] };  // Fractional particles carried between frames
+var fxCarry = { smoke: 0, dirt: [0, 0], wake: 0 };  // Fractional particles carried between frames
 
 function rand(a, b) {
   return a + Math.random() * (b - a);
@@ -21,7 +25,9 @@ function updateEffects(ms) {
   if (car) {
     emitExhaust(ms);
     car.wheels.forEach(function (wl, i) { emitWheelDirt(wl, i, ms); });
+    emitWake(ms);
   }
+  emitEntrySplashes();
   updateParticles(ms);
 }
 
@@ -53,6 +59,11 @@ function emitExhaust(ms) {
 // Dust and mud flung from a tyre that touches the ground or a box. Spinning faster than the car
 // moves (wheelspin) and braking hard throw the most; plain rolling throws a little at speed.
 function emitWheelDirt(wl, i, ms) {
+  var lvl = waterLevelAt(wl.position.x);
+  if (lvl !== null && wl.position.y + car.wheelR > lvl) {
+    emitWheelSpray(wl, i, ms, lvl);  // A wet tyre throws water, not dirt
+    return;
+  }
   var hits = Matter.Query.collides(wl, terrainBodiesNear(wl.position.x).concat(walls, boxes));
   if (!hits.length) {
     fxCarry.dirt[i] = 0;
@@ -103,6 +114,84 @@ function emitWheelDirt(wl, i, ms) {
   }
 }
 
+// Water drops (solid, fall back into the water) and a little white mist, flying up from (x, y)
+function spawnDrops(x, y, n, vx, up, spread) {
+  for (var k = 0; k < n; k++) {
+    spawnParticle({
+      x: x + rand(-spread, spread), y: y - rand(0, 4),
+      vx: vx + rand(-90, 90), vy: -rand(up * 0.4, up),
+      life: rand(600, 1100), size: rand(1.6, 3.4),
+      alpha: 0.85, gravity: 1000, drag: 0.3,
+      color: Math.random() < 0.5 ? '#bfe6f7' : '#8ccbe8',
+      sinkAt: y + 2, layer: 'front'
+    });
+    if (k % 3 === 0) {
+      spawnParticle({
+        x: x + rand(-spread, spread), y: y - rand(0, 10),
+        vx: vx * 0.4 + rand(-30, 30), vy: -rand(20, 60),
+        life: rand(400, 800), size: rand(4, 7), grow: rand(20, 35),
+        alpha: 0.4, gravity: 0, drag: 2.5,
+        color: '#eaf6fb', soft: true, layer: 'front'
+      });
+    }
+  }
+}
+
+// A splash (and its sound) when a body breaks into the water: bigger for faster and bigger bodies
+function emitEntrySplashes() {
+  waterBodies().forEach(function (b) {
+    var wet = b.wetFrac > 0;
+    if (wet && !b.wasWet) {
+      var v = Matter.Body.getVelocity(b);
+      var sp = Math.sqrt(v.x * v.x + v.y * v.y);
+      var lvl = waterLevelAt(b.position.x);
+      if (sp > FX.splashMinSpeed && lvl !== null) {
+        var size = Math.min(1, Math.sqrt(b.area) / 160);  // Car body 1, a wheel ~0.5, a box ~0.25
+        var s = Math.min(1, (sp - FX.splashMinSpeed) / 12) * (0.35 + 0.65 * size);
+        var half = (b.bounds.max.x - b.bounds.min.x) / 2;
+        spawnDrops(b.position.x, lvl, Math.round(8 + 50 * s), v.x * 60 * 0.3, 250 + 500 * s, half);
+        playSplash(Math.min(1, 0.25 + s));
+      }
+    }
+    b.wasWet = wet;
+  });
+}
+
+// A tyre at the water surface throws spray backward when it spins or the car moves; under water, nothing
+function emitWheelSpray(wl, i, ms, lvl) {
+  var r = car.wheelR;
+  if (wl.position.y - r > lvl) {
+    fxCarry.dirt[i] = 0;
+    return;
+  }
+  var v = Matter.Body.getVelocity(wl);
+  var rim = Matter.Body.getAngularVelocity(wl) * r;  // Tyre surface speed, px/step
+  var rate = Math.min(FX.sprayMaxRate, Math.abs(rim) * 10 + Math.abs(v.x) * 6);
+  fxCarry.dirt[i] += rate * ms / 1000;
+  var dir = rim >= 0 ? -1 : 1;
+  while (fxCarry.dirt[i] >= 1) {
+    fxCarry.dirt[i] -= 1;
+    spawnDrops(wl.position.x + dir * r * 0.6, lvl, 1, v.x * 60 * 0.5 + dir * Math.abs(rim) * 12,
+      160 + Math.abs(rim) * 18, 8);
+  }
+}
+
+// Bow wave in front of the car body when it pushes through the water
+function emitWake(ms) {
+  var b = car.chassis, lvl = waterLevelAt(b.position.x);
+  var v = Matter.Body.getVelocity(b);
+  if (lvl === null || !b.wetFrac || Math.abs(v.x) < FX.wakeMinSpeed) {
+    fxCarry.wake = 0;
+    return;
+  }
+  fxCarry.wake += Math.min(80, Math.abs(v.x) * 8) * ms / 1000;
+  var front = v.x > 0 ? b.bounds.max.x - 10 : b.bounds.min.x + 10;
+  while (fxCarry.wake >= 1) {
+    fxCarry.wake -= 1;
+    spawnDrops(front, lvl, 1, v.x * 60 * 0.6, 120 + Math.abs(v.x) * 25, 10);
+  }
+}
+
 // A puff of dust where bodies hit each other hard (boxes landing, the car slamming down)
 function setUpImpactDust() {
   Events.on(engine, 'collisionStart', function (e) {
@@ -113,7 +202,7 @@ function setUpImpactDust() {
       var carOnGround = pairHas(pair, CAT.car) && pairHas(pair, CAT.ground);
       if (hit < (carOnGround ? FX.landingMinSpeed : FX.impactMinSpeed)) continue;
       var sup = pair.collision.supports && pair.collision.supports[0];
-      if (!sup) continue;
+      if (!sup || isUnderwater(sup.x, sup.y)) continue;  // No dust under water
       var n = Math.min(10, Math.round(hit * 1.2));
       for (var k = 0; k < n; k++) {
         var ang = rand(Math.PI, Math.PI * 2);  // Upper half circle
