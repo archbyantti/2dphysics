@@ -16,15 +16,31 @@ function createCar() {
     return { group: group, category: CAT.car, mask: CAT.box | CAT.wall };
   };
 
-  // Chassis with rounded corners (chamfer)
-  var chassis = Bodies.rectangle(cx, cy, width, height, {
-    collisionFilter: filter(),
-    chamfer: { radius: height * 0.5 },
-    density: 0.0002,
-    friction: 0.1
+  // Lower body with rounded ends (chamfer)
+  var base = Bodies.rectangle(cx, cy, width, height, {
+    chamfer: { radius: height * 0.5 }
   });
 
-  // Wheels sit below the chassis center
+  // Cabin on top (forward is +x): raked windshield, steeper rear, rounded roof corners.
+  // Outline is relative to the base center; the bottom edge sinks 10 px into the base.
+  var cabinShape = Matter.Vertices.chamfer([
+    { x: -95, y: -25 },  // Rear bottom
+    { x: -80, y: -80 },  // Rear roof
+    { x: 30, y: -80 },   // Front roof
+    { x: 75, y: -25 }    // Front bottom
+  ], [0, 12, 16, 0]);
+  var cabinCentre = Matter.Vertices.centre(cabinShape);
+  var cabin = Bodies.fromVertices(cx + cabinCentre.x, cy + cabinCentre.y, [cabinShape]);
+
+  // Chassis is one rigid compound body: parts[0] is the hull, then base and cabin
+  var chassis = Matter.Body.create({
+    parts: [base, cabin],
+    collisionFilter: filter(),
+    friction: 0.1
+  });
+  Matter.Body.setDensity(chassis, 0.0002);
+
+  // Wheels sit below the base center
   var wheelY = cy + wheelSize;
   var wheelOpts = function () {
     return { collisionFilter: filter(), friction: 0.9, density: 0.004 };
@@ -32,26 +48,37 @@ function createCar() {
   var wheelA = Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, wheelOpts());
   var wheelB = Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, wheelOpts());
 
-  // Axles (constraints) attach each wheel to the chassis
-  var axleA = Matter.Constraint.create({
-    bodyB: chassis,
-    pointB: { x: wheelAOffset, y: wheelSize },
-    bodyA: wheelA,
-    stiffness: 1,
-    length: 0
-  });
-  var axleB = Matter.Constraint.create({
-    bodyB: chassis,
-    pointB: { x: wheelBOffset, y: wheelSize },
-    bodyA: wheelB,
-    stiffness: 1,
-    length: 0
-  });
+  // Axles (constraints) attach each wheel to the chassis. The cabin moves the chassis
+  // center of mass, so anchor points are measured from the chassis position.
+  var axle = function (wheel) {
+    return Matter.Constraint.create({
+      bodyB: chassis,
+      pointB: { x: wheel.position.x - chassis.position.x, y: wheel.position.y - chassis.position.y },
+      bodyA: wheel,
+      stiffness: 1,
+      length: 0
+    });
+  };
+  var axleA = axle(wheelA);
+  var axleB = axle(wheelB);
 
   World.add(world, [chassis, wheelA, wheelB, axleA, axleB]);
 
+  // Side windows follow the cabin slopes; stored relative to the chassis position so the
+  // renderer can rotate them with the body. They are decoration only, not physics.
+  var rel = function (pts) {
+    return pts.map(function (p) {
+      return { x: cx + p.x - chassis.position.x, y: cy + p.y - chassis.position.y };
+    });
+  };
+  var windows = [
+    rel([{ x: -84, y: -39 }, { x: -75, y: -68 }, { x: -24, y: -68 }, { x: -24, y: -39 }]),  // Rear
+    rel([{ x: -15, y: -39 }, { x: -15, y: -68 }, { x: 24, y: -68 }, { x: 50, y: -39 }])     // Front
+  ];
+
   car = {
     color: '#e74c3c',
+    windows: windows,
     chassis: chassis,
     wheels: [wheelA, wheelB],
     wheelR: wheelSize,
@@ -60,11 +87,15 @@ function createCar() {
 }
 
 // Update car motor physics; call once per physics step
-function updateCarMotor() {
+// Velocities are read with getVelocity / getAngularVelocity, which Matter.js normalizes to a
+// 16.67 ms step, and every per-step effect is scaled by `k`, so the motor behaves the same for
+// any step size `dt` (ms).
+function updateCarMotor(dt) {
   if (!car) return;
+  var k = dt / (1000 / 60);
   var fwd = carForward();
-  var vx = car.chassis.velocity.x, vy = car.chassis.velocity.y;
-  var speed = vx * fwd.x + vy * fwd.y;  // Project velocity onto forward direction
+  var v = Matter.Body.getVelocity(car.chassis);
+  var speed = v.x * fwd.x + v.y * fwd.y;  // Project velocity onto forward direction
   car.speed = speed;
   var tau;
   if (input.accel) {
@@ -79,13 +110,14 @@ function updateCarMotor() {
     tau = 0;
   }
   car.wheels.forEach(function (wl) {
-    // Apply brake when space is pressed
+    var w = Matter.Body.getAngularVelocity(wl);
+    // Brake (space) removes 10% of the wheel spin per 60 Hz step
     if (input.brake) {
-      Matter.Body.setAngularVelocity(wl, wl.angularVelocity * 0.90);
+      w *= Math.pow(0.90, k);
     }
     // Air drag resists wheel spin
-    var t = tau - MOTOR.airDrag * wl.angularVelocity * Math.abs(wl.angularVelocity);
-    Matter.Body.setAngularVelocity(wl, wl.angularVelocity + t * MOTOR.torqueScale);
+    var t = tau - MOTOR.airDrag * w * Math.abs(w);
+    Matter.Body.setAngularVelocity(wl, w + t * MOTOR.torqueScale * k);
   });
 }
 

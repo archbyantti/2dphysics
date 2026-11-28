@@ -16,6 +16,28 @@ function addWalls() {
 function resizeWalls() {
   World.remove(world, walls);
   addWalls();
+  // Pull anything the new walls left outside back into the box
+  boxes.forEach(function (b) { pullInside([b]); });
+  if (car) pullInside([car.chassis].concat(car.wheels));
+}
+
+// Move a group of bodies together so their combined bounds fit inside 0..W, ..H
+function pullInside(bodies) {
+  var minX = Infinity, maxX = -Infinity, maxY = -Infinity;
+  bodies.forEach(function (b) {
+    minX = Math.min(minX, b.bounds.min.x);
+    maxX = Math.max(maxX, b.bounds.max.x);
+    maxY = Math.max(maxY, b.bounds.max.y);
+  });
+  var dx = 0, dy = 0;
+  if (maxX > W) dx = W - maxX;
+  if (minX + dx < 0) dx = -minX;
+  if (maxY > H) dy = H - maxY;
+  if (dx === 0 && dy === 0) return;
+  bodies.forEach(function (b) {
+    Matter.Body.translate(b, { x: dx, y: dy });
+    Matter.Body.setVelocity(b, { x: 0, y: 0 });
+  });
 }
 
 // Remove the topmost box under a screen position (Shift+click)

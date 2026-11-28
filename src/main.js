@@ -20,21 +20,23 @@ function init() {
   startLoop();
 }
 
-// Start the main loop: physics runs in fixed steps, independent of the display refresh rate
+// Start the main loop. Every frame advances the simulation by exactly the real time that has
+// passed (times SIM_SPEED), split into equal substeps of at most MAX_STEP_MS. Motion is smooth
+// on any refresh rate and runs at the same speed everywhere.
 function startLoop() {
-  var acc = 0;
   var last = null;
   function loop(now) {
     if (last !== null) {
-      // Cap the catch-up after a stalled or hidden tab
-      acc += Math.min(now - last, 250);
+      // Cap the jump after a stalled or hidden tab
+      var simMs = Math.min(now - last, 100) * SIM_SPEED;
+      var n = Math.ceil(simMs / MAX_STEP_MS);
+      var h = simMs / n;
+      for (var i = 0; i < n; i++) {
+        updateCarMotor(h);
+        Engine.update(engine, h);
+      }
     }
     last = now;
-    while (acc >= STEP_MS) {
-      updateCarMotor();
-      Engine.update(engine, STEP_MS);
-      acc -= STEP_MS;
-    }
     updateEngineSound();
     updateCameraPosition();
     draw();

@@ -7,7 +7,7 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | File                     | Purpose                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------- |
 | src/index.html           | Page layout, CSS styles, and the ordered `<script>` tags; no application logic   |
-| src/state.js             | Global state and config (world refs, `CAT` collision bits, `STEP_MS`, `MOTOR`)   |
+| src/state.js             | Global state and config (world refs, `CAT` bits, `SIM_SPEED`, `MOTOR`)         |
 | src/util.js              | Pure helpers: `screenToWorld`, `worldToScreen`                                   |
 | src/sound.js             | Web Audio engine sound and collision sounds (`setUpCollisionSound`)              |
 | src/car.js               | Car creation (chassis, wheels, axle constraints) and the torque-based motor     |
@@ -89,9 +89,11 @@ The application follows a straightforward loop:
 1. **Matter.js Engine** — Handles physics simulation (gravity, collisions, walls).
 2. **Custom Canvas Renderer** — Draws everything to a `<canvas>` element each frame (grid, walls, boxes, car). Matter.js's built-in renderer is intentionally bypassed to avoid rendering conflicts with CSS transforms used for zoom.
 3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
-4. **Main Loop** — `requestAnimationFrame` drives the frame; physics (and the car motor) advance in fixed
-   `STEP_MS` steps via an accumulator, so the simulation speed does not depend on the display refresh rate. Sound,
-   camera, and drawing update once per frame.
+4. **Main Loop** — `requestAnimationFrame` drives the frame. Each frame advances physics (and the car motor) by
+   the real elapsed time × `SIM_SPEED`, split into equal substeps of at most `MAX_STEP_MS`, so motion is smooth and
+   equally fast on any refresh rate. Code that runs per substep must scale per-step effects by the step length
+   (see `updateCarMotor`) and read velocities with `Body.getVelocity` / `getAngularVelocity`. Sound, camera, and
+   drawing update once per frame.
 
 ## Agent-Specific Instructions
 

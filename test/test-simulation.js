@@ -46,12 +46,27 @@ function check(name, ok, detail) {
   check('collision sound played', await page.evaluate(() => window.__collisionSounds) > 0,
     await page.evaluate(() => window.__collisionSounds));
 
+  // The car has a cabin that boxes can land on.
+  check('car has a cabin', await page.evaluate(() => car.chassis.parts.length) === 3);
+  const drop = await page.evaluate(() => {
+    var cab = car.chassis.parts[2];
+    return worldToScreen(cab.position.x, cab.bounds.min.y - 80);
+  });
+  await page.mouse.click(drop.x, drop.y);
+  await page.waitForTimeout(1000);
+  const onRoof = await page.evaluate(() => {
+    var b = boxes[boxes.length - 1], cab = car.chassis.parts[2];
+    return b.bounds.max.y <= cab.bounds.min.y + 5 && b.position.x > cab.bounds.min.x && b.position.x < cab.bounds.max.x;
+  });
+  check('box lands on the cabin roof', onRoof);
+
   // Shift+click on a resting box removes it.
+  const before = await page.evaluate(() => boxes.length);
   const target = await page.evaluate(() => worldToScreen(boxes[0].position.x, boxes[0].position.y));
   await page.keyboard.down('Shift');
   await page.mouse.click(target.x, target.y);
   await page.keyboard.up('Shift');
-  check('shift+click removes a box', await page.evaluate(() => boxes.length) === 4,
+  check('shift+click removes a box', await page.evaluate(() => boxes.length) === before - 1,
     await page.evaluate(() => boxes.length));
 
   // Drive right with the up arrow.
@@ -76,6 +91,18 @@ function check(name, ok, detail) {
   const ground = await page.evaluate(() => ({ top: walls[0].bounds.min.y, right: walls[2].bounds.min.x }));
   check('ground moves on resize', ground.top === 900, ground.top);
   check('right wall moves on resize', ground.right === 1600, ground.right);
+
+  // Shrinking the window keeps the car and boxes inside the new walls.
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(800);
+  await page.keyboard.up('ArrowUp');
+  await page.setViewportSize({ width: 700, height: 500 });
+  await page.waitForTimeout(1000);
+  const inside = await page.evaluate(() => {
+    var ok = function (b) { return b.position.x > 0 && b.position.x < W && b.position.y < H; };
+    return ok(car.chassis) && boxes.every(ok);
+  });
+  check('bodies stay inside after shrinking', inside);
 
   check('no console errors', errors.length === 0, errors.join(' | ') || undefined);
 

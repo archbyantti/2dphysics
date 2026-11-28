@@ -22,8 +22,10 @@ var CAT = {
   wall: 4
 };
 
-// Fixed physics time step in milliseconds
-var STEP_MS = 1000 / 60;
+// Simulation speed relative to real time, and the largest physics substep (ms).
+// 1.6 keeps the feel the sim was originally tuned with (one 60 Hz step per frame on a 100 Hz display).
+var SIM_SPEED = 1.6;
+var MAX_STEP_MS = 1000 / 60;
 
 // Motor configuration for the car
 var MOTOR = {

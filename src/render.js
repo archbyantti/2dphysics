@@ -102,13 +102,66 @@ function drawWheel(wl) {
 // Draw the car (rounded chassis + wheels)
 function drawCar() {
   if (!car) return;
-  traceBody(car.chassis);
+  var base = car.chassis.parts[1], cabin = car.chassis.parts[2];
+  // Cabin first, so the base covers the seam where they overlap
+  drawCarPart(cabin);
+  car.windows.forEach(drawCarWindow);
+  drawCarPart(base);
+  car.wheels.forEach(drawWheel);
+}
+
+// Fill and outline one part of the car body
+function drawCarPart(part) {
+  traceBody(part);
   ctx.fillStyle = car.color;
   ctx.fill();
   ctx.strokeStyle = '#222';
   ctx.lineWidth = 2;
   ctx.stroke();
-  car.wheels.forEach(drawWheel);
+}
+
+// Convert a point stored relative to the chassis into screen coordinates
+function chassisToScreen(p) {
+  var b = car.chassis, cos = Math.cos(b.angle), sin = Math.sin(b.angle);
+  return worldToScreen(b.position.x + p.x * cos - p.y * sin, b.position.y + p.x * sin + p.y * cos);
+}
+
+// Draw one side window: tinted glass with a soft reflection and a dark rubber frame
+function drawCarWindow(pts) {
+  var s = pts.map(chassisToScreen);
+  var trace = function () {
+    ctx.beginPath();
+    ctx.moveTo(s[0].x, s[0].y);
+    for (var i = 1; i < s.length; i++) ctx.lineTo(s[i].x, s[i].y);
+    ctx.closePath();
+  };
+  trace();
+
+  // Glass: lighter near the roof, darker toward the sill (from roof edge s[1] to sill s[0])
+  var glass = ctx.createLinearGradient(s[1].x, s[1].y, s[0].x, s[0].y);
+  glass.addColorStop(0, '#cdeef8');
+  glass.addColorStop(1, '#6fa9c0');
+  ctx.fillStyle = glass;
+  ctx.fill();
+
+  // Diagonal reflection streak, clipped to the glass
+  ctx.save();
+  ctx.clip();
+  var a = chassisToScreen({ x: pts[1].x + 10, y: pts[1].y });
+  var b = chassisToScreen({ x: pts[1].x - 4, y: pts[0].y });
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 7 * zoom;
+  ctx.stroke();
+  ctx.restore();
+
+  trace();
+  ctx.strokeStyle = '#2b2b2b';
+  ctx.lineWidth = Math.max(1, 2.5 * zoom);
+  ctx.lineJoin = 'round';
+  ctx.stroke();
 }
 
 // Draw one frame
