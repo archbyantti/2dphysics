@@ -16,6 +16,7 @@ function init() {
   addWalls();
   createCar();
   setUpCollisionSound();
+  setUpImpactDust();
   setUpCanvas();
   startLoop();
 }
@@ -35,6 +36,7 @@ function startLoop() {
         updateCarMotor(h);
         Engine.update(engine, h);
       }
+      updateEffects(simMs);
     }
     last = now;
     updateEngineSound();

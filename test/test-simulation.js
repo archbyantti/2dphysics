@@ -73,10 +73,20 @@ function check(name, ok, detail) {
   await page.locator('canvas').focus();
   const x0 = await page.evaluate(() => car.chassis.position.x);
   await page.keyboard.down('ArrowUp');
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(400);
+  // Throttle makes exhaust smoke (back layer) and the tyres throw dirt (front layer).
+  const fx = await page.evaluate(() => ({
+    smoke: particles.filter((p) => p.layer === 'back').length,
+    dirt: particles.filter((p) => p.layer === 'front').length,
+    max: MAX_PARTICLES
+  }));
+  check('exhaust smoke while accelerating', fx.smoke > 0, fx.smoke);
+  check('tyre dirt while accelerating', fx.dirt > 0, fx.dirt);
+  await page.waitForTimeout(600);
   await page.keyboard.up('ArrowUp');
   const x1 = await page.evaluate(() => car.chassis.position.x);
   check('car drives forward', x1 - x0 > 20, Math.round(x1 - x0) + ' px');
+  check('particle count stays capped', await page.evaluate(() => particles.length <= MAX_PARTICLES));
 
   // The C key toggles camera centering and shows it in the help text.
   await page.keyboard.press('KeyC');

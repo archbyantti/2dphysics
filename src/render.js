@@ -106,8 +106,23 @@ function drawCar() {
   // Cabin first, so the base covers the seam where they overlap
   drawCarPart(cabin);
   car.windows.forEach(drawCarWindow);
+  drawExhaustPipe();
   drawCarPart(base);
   car.wheels.forEach(drawWheel);
+}
+
+// Short tailpipe sticking out behind the body; the base is drawn over its inner end
+function drawExhaustPipe() {
+  var a = chassisToScreen({ x: car.exhaust.x + 14, y: car.exhaust.y });
+  var b = chassisToScreen({ x: car.exhaust.x - 22, y: car.exhaust.y });
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = '#3a3a3a';
+  ctx.lineWidth = 6 * zoom;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.lineCap = 'butt';
 }
 
 // Fill and outline one part of the car body
@@ -122,8 +137,8 @@ function drawCarPart(part) {
 
 // Convert a point stored relative to the chassis into screen coordinates
 function chassisToScreen(p) {
-  var b = car.chassis, cos = Math.cos(b.angle), sin = Math.sin(b.angle);
-  return worldToScreen(b.position.x + p.x * cos - p.y * sin, b.position.y + p.x * sin + p.y * cos);
+  var w = chassisToWorld(p);
+  return worldToScreen(w.x, w.y);
 }
 
 // Draw one side window: tinted glass with a soft reflection and a dark rubber frame
@@ -174,5 +189,7 @@ function draw() {
   for (var i = 0; i < boxes.length; i++) {
     drawBox(boxes[i]);
   }
+  drawParticles('back');
   drawCar();
+  drawParticles('front');
 }

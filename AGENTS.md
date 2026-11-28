@@ -12,9 +12,11 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | src/sound.js             | Web Audio engine sound and collision sounds (`setUpCollisionSound`)              |
 | src/car.js               | Car creation (chassis, wheels, axle constraints) and the torque-based motor     |
 | src/world.js             | Walls (rebuilt on resize), box spawn/remove, and the box counter                 |
+| src/particles.js         | Particle pool (`spawnParticle`, update, draw by layer); decoration, not physics |
+| src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust; tuning in `FX`             |
 | src/render.js            | Custom canvas renderer; bodies are drawn from their real vertices                |
 | src/input.js             | Mouse, keyboard, and wheel handlers; canvas setup, resize, camera follow         |
-| src/main.js              | `init`, the fixed-timestep main loop, and the `load` bootstrap                   |
+| src/main.js              | `init`, the substepped main loop, and the `load` bootstrap                       |
 | test/test-simulation.js  | Playwright smoke test; exits non-zero if any check fails                         |
 | package.json             | Dev dependency (`@playwright/test`) and the `check` / `test` scripts             |
 | AGENTS.md                | This contributor guide                                                           |
@@ -87,7 +89,9 @@ When adding a new script, register it in `index.html` in the correct load order.
 The application follows a straightforward loop:
 
 1. **Matter.js Engine** — Handles physics simulation (gravity, collisions, walls).
-2. **Custom Canvas Renderer** — Draws everything to a `<canvas>` element each frame (grid, walls, boxes, car). Matter.js's built-in renderer is intentionally bypassed to avoid rendering conflicts with CSS transforms used for zoom.
+2. **Custom Canvas Renderer** — Draws everything to a `<canvas>` element each frame, in order: grid, walls, boxes,
+   `back` particles (smoke), car, `front` particles (dust, mud). Particles are updated once per frame with the
+   frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is intentionally bypassed to avoid rendering conflicts with CSS transforms used for zoom.
 3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
 4. **Main Loop** — `requestAnimationFrame` drives the frame. Each frame advances physics (and the car motor) by
    the real elapsed time × `SIM_SPEED`, split into equal substeps of at most `MAX_STEP_MS`, so motion is smooth and

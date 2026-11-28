@@ -76,9 +76,13 @@ function createCar() {
     rel([{ x: -15, y: -39 }, { x: -15, y: -68 }, { x: 24, y: -68 }, { x: 50, y: -39 }])     // Front
   ];
 
+  // Exhaust pipe outlet at the lower rear of the body (smoke comes out here)
+  var exhaust = rel([{ x: -130, y: 8 }])[0];
+
   car = {
     color: '#e74c3c',
     windows: windows,
+    exhaust: exhaust,
     chassis: chassis,
     wheels: [wheelA, wheelB],
     wheelR: wheelSize,
@@ -119,6 +123,12 @@ function updateCarMotor(dt) {
     var t = tau - MOTOR.airDrag * w * Math.abs(w);
     Matter.Body.setAngularVelocity(wl, w + t * MOTOR.torqueScale * k);
   });
+}
+
+// Convert a point stored relative to the chassis into world coordinates
+function chassisToWorld(p) {
+  var b = car.chassis, cos = Math.cos(b.angle), sin = Math.sin(b.angle);
+  return { x: b.position.x + p.x * cos - p.y * sin, y: b.position.y + p.x * sin + p.y * cos };
 }
 
 // Get car forward direction vector
