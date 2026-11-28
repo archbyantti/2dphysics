@@ -37,12 +37,12 @@ var MAX_STEP_MS = 1000 / 60;
 // torque peak (lower gears multiply the engine torque more).
 var MOTOR = {
   gears: [
-    { top: 7, torque: 0.7 },
-    { top: 12.5, torque: 0.45 },
-    { top: 18.5, torque: 0.33 },
-    { top: 25, torque: 0.27 }
+    { top: 7, torque: 0.45 },
+    { top: 12.5, torque: 0.29 },
+    { top: 18.5, torque: 0.23 },
+    { top: 25, torque: 0.2 }
   ],
-  reverse: { top: 6, torque: 0.5 },
+  reverse: { top: 6, torque: 0.33 },
   idleRpm: 850,
   launchRpm: 2200,      // Engine speed while the clutch slips pulling away
   redline: 6000,        // Rev limiter: no drive above this
@@ -50,10 +50,22 @@ var MOTOR = {
   downshiftRpm: 2300,
   shiftMs: 220,         // Drive is cut for this long (sim time) during an upshift
   engineBrake: 0.004,   // Slows the wheels when off the throttle
-  brakeDecel: 0.35,      // Tyre surface speed the brake removes per 60 Hz step, px/step (Space, or Down while rolling)
+  brakeDecel: 0.15,      // Tyre surface speed the brake removes per 60 Hz step, px/step (Space, or Down while rolling)
   airDrag: 0.0006,      // Air resistance on wheel spin
   bodyAirFriction: 0.0015, // Matter.js frictionAir for the car (default 0.01 would cap the speed near 11)
   torqueScale: 0.01     // Converts torque into angular velocity change per step
+};
+
+// Suspension and mass balance. Most of the mass is in the body (sprung) and little in the wheels,
+// like a real car; stiffness and damping are Matter.js constraint values (0..1 per step).
+var SUSPENSION = {
+  chassisDensity: 0.0017,  // Body mass ~43
+  wheelDensity: 0.0012,    // Each wheel ~9
+  armLength: 110,          // Trailing arm from the wheel center to its pivot on the body, px
+  springLength: 70,        // Spring top mount sits this far above the wheel center, px
+  preload: 3,              // Spring rest length is this much longer, holding the body up at ride height
+  stiffness: 0.02,
+  damping: 0.03           // Shock absorber strength (force per unit of spring speed), see updateDampers
 };
 
 // Car input state

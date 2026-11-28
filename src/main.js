@@ -36,6 +36,7 @@ function startLoop() {
       updateTerrain(car.chassis.position.x);
       for (var i = 0; i < n; i++) {
         updateCarMotor(h);
+        updateDampers(h);
         Engine.update(engine, h);
       }
       updateEffects(simMs);

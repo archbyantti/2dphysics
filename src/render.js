@@ -59,7 +59,12 @@ async function initRenderer() {
     g.fillRect(0, 0, w, h);
   });
 
-  scene.sky = new PIXI.Graphics();       // Screen-space stars and parallax hills
+  scene.sky = new PIXI.Graphics();       // Screen-space stars and the two far hill layers
+  scene.palmsFar = new PIXI.Container();  // Palm silhouettes standing on the second hill layer
+  scene.hillsNear = new PIXI.Graphics();  // Nearest hill layer
+  scene.palmsNear = new PIXI.Container(); // Bigger palms standing on it
+  scene.palmTex = [0, 1, 2].map(makePalmTexture);
+  scene.palmPool = { far: [], near: [] };
   scene.world = new PIXI.Container();
   scene.terrain = new PIXI.Container();
   scene.ramps = new PIXI.Container();   // Above all ground chunks, since a ramp can cross a chunk border
@@ -69,7 +74,7 @@ async function initRenderer() {
   scene.carLayer = new PIXI.Container();
   scene.front = new PIXI.Container();   // Particles in front of the car (dust, mud)
   scene.world.addChild(scene.terrain, scene.ramps, scene.walls, scene.boxes, scene.back, scene.carLayer, scene.front);
-  app.stage.addChild(scene.sky, scene.world);
+  app.stage.addChild(scene.sky, scene.palmsFar, scene.hillsNear, scene.palmsNear, scene.world);
 
   // Fixed star field (fractions of the screen), drawn with a slight parallax
   scene.stars = [];
@@ -91,6 +96,13 @@ function resizeRenderer() {
 
 // Screen-space backdrop: stars and two layers of distant hills. Each layer moves with the camera
 // by its parallax factor (0 = fixed to the screen, 1 = moves with the world).
+// Backdrop layers in screen space. Each moves with the camera by its parallax factor f
+// (0 = fixed to the screen, 1 = moves with the world). Palms stand on the hill layer they belong to.
+var PALM_LAYERS = {
+  far: { f: 0.3, baseFrac: 0.64, amp: 55, spacing: 230, density: 0.55, scale: 0.5, tint: 0x1d1f3d, salt: 1 },
+  near: { f: 0.5, baseFrac: 0.7, amp: 40, spacing: 330, density: 0.5, scale: 0.85, tint: 0x15172d, salt: 2 }
+};
+
 function drawSky() {
   var g = scene.sky;
   g.clear();
@@ -100,18 +112,103 @@ function drawSky() {
   });
   drawHillLayer(g, 0.12, 0.50, 70, 0x24264a);
   drawHillLayer(g, 0.3, 0.64, 55, 0x2c2f55);
+  syncPalms('far');
+  scene.hillsNear.clear();
+  drawHillLayer(scene.hillsNear, 0.5, 0.7, 40, 0x31345f);
+  syncPalms('near');
+}
+
+// Screen y of a hill layer's top edge at screen x
+function hillLayerY(x, f, baseFrac, amp) {
+  var u = x - panOffset.x * f;
+  var baseY = H * baseFrac + (panOffset.y - H * 0.62) * f * 0.5;
+  return baseY - amp * (0.6 * Math.sin(u / 260) + 0.4 * Math.sin(u / 97 + 1.7));
 }
 
 function drawHillLayer(g, f, baseFrac, amp, color) {
-  var shift = -panOffset.x * f;
-  var baseY = H * baseFrac + (panOffset.y - H * 0.62) * f * 0.5;
   var pts = [];
-  for (var x = 0; x <= W + 20; x += 20) {
-    var u = x + shift;
-    pts.push({ x: x, y: baseY - amp * (0.6 * Math.sin(u / 260) + 0.4 * Math.sin(u / 97 + 1.7)) });
-  }
+  for (var x = 0; x <= W + 20; x += 20) pts.push({ x: x, y: hillLayerY(x, f, baseFrac, amp) });
   pts.push({ x: W + 20, y: H }, { x: 0, y: H });
   g.poly(pts).fill(color);
+}
+
+// Deterministic pseudo-random number in [0, 1) for palm slot k of a layer, channel c
+function palmRand(k, salt, c) {
+  var v = Math.sin(k * 91.7 + salt * 13.1 + c * 47.3) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+// Palm silhouette (white, tinted per layer) with its trunk base at the texture's anchor.
+// The trunk is a tapered curve; each frond is a drooping leaf shape.
+function makePalmTexture(variant) {
+  var lean = [-0.22, 0.12, 0.32][variant], h = [170, 205, 150][variant];
+  var g = new PIXI.Graphics();
+  // Trunk along a quadratic curve from the base (0, 0) to the crown
+  var p1 = { x: lean * h * 0.25, y: -h * 0.55 }, p2 = { x: lean * h, y: -h };
+  var left = [], right = [];
+  for (var i = 0; i <= 12; i++) {
+    var t = i / 12, it = 1 - t;
+    var x = 2 * it * t * p1.x + t * t * p2.x, y = 2 * it * t * p1.y + t * t * p2.y;
+    var dx = 2 * it * p1.x + 2 * t * (p2.x - p1.x), dy = 2 * it * p1.y + 2 * t * (p2.y - p1.y);
+    var len = Math.sqrt(dx * dx + dy * dy), w = 6 - 3 * t;
+    left.push({ x: x - dy / len * w, y: y + dx / len * w });
+    right.push({ x: x + dy / len * w, y: y - dx / len * w });
+  }
+  g.poly(left.concat(right.reverse())).fill(0xffffff);
+  // Fronds: directions in degrees (0 = right, -90 = up), drooping under their own weight
+  var dirs = [-178, -145, -115, -85, -55, -22, 8, -195];
+  dirs.forEach(function (deg, n) {
+    var a = deg * Math.PI / 180, L = h * (0.5 + 0.12 * ((n * 37 + variant * 11) % 5) / 4);
+    var top = [], bottom = [];
+    for (var k = 0; k <= 10; k++) {
+      var s = k / 10;
+      var cx = p2.x + Math.cos(a) * L * s, cy = p2.y + Math.sin(a) * L * s + 0.55 * L * s * s;
+      var nx = -Math.sin(a), ny = Math.cos(a);
+      var wd = L * 0.11 * Math.pow(Math.sin(Math.PI * Math.min(1, s * 1.15)), 0.7);
+      top.push({ x: cx + nx * wd, y: cy + ny * wd });
+      bottom.push({ x: cx - nx * wd, y: cy - ny * wd });
+    }
+    g.poly(top.concat(bottom.reverse())).fill(0xffffff);
+  });
+  // Coconuts under the crown
+  g.circle(p2.x - 5, p2.y + 6, 5).fill(0xffffff);
+  g.circle(p2.x + 4, p2.y + 8, 5).fill(0xffffff);
+  g.circle(p2.x, p2.y + 12, 4.5).fill(0xffffff);
+  var b = g.getLocalBounds();
+  var tex = app.renderer.generateTexture({ target: g, resolution: 2, antialias: true });
+  tex.palmAnchor = { x: -b.x / b.width, y: -b.y / b.height };
+  g.destroy();
+  return tex;
+}
+
+// Place palm sprites for one backdrop layer: slots every `spacing` px in layer space, some left empty,
+// each with its own jitter, size, variant and mirroring. Sprites are pooled and reused every frame.
+function syncPalms(name) {
+  var L = PALM_LAYERS[name], pool = scene.palmPool[name];
+  var container = name === 'far' ? scene.palmsFar : scene.palmsNear;
+  var off = panOffset.x * L.f;  // Screen x = layer x + off
+  var k0 = Math.floor((-off - 200) / L.spacing), k1 = Math.ceil((W - off + 200) / L.spacing);
+  var used = 0;
+  for (var k = k0; k <= k1; k++) {
+    if (palmRand(k, L.salt, 1) > L.density) continue;
+    var x = k * L.spacing + (palmRand(k, L.salt, 2) - 0.5) * L.spacing * 0.8 + off;
+    var tex = scene.palmTex[Math.floor(palmRand(k, L.salt, 3) * 3)];
+    var sp = pool[used];
+    if (!sp) {
+      sp = new PIXI.Sprite(tex);
+      pool.push(sp);
+      container.addChild(sp);
+    }
+    used++;
+    sp.texture = tex;
+    sp.anchor.set(tex.palmAnchor.x, tex.palmAnchor.y);
+    var sc = L.scale * (0.75 + 0.5 * palmRand(k, L.salt, 4));
+    sp.scale.set(palmRand(k, L.salt, 5) < 0.5 ? -sc : sc, sc);
+    sp.position.set(x, hillLayerY(x, L.f, L.baseFrac, L.amp) + 4);
+    sp.tint = L.tint;
+    sp.visible = true;
+  }
+  for (var i = used; i < pool.length; i++) pool[i].visible = false;
 }
 
 // Surface points of the terrain from x0 to x1 (inclusive), one per ground quad
@@ -139,18 +236,24 @@ function buildMarker(x, label) {
   return c;
 }
 
-// Wooden jump ramp from x0 to x1: planks between the ramp surface and the hills underneath
-function buildRamp(x0, x1) {
+// Wooden jump ramp: planks between the ramp surface and the hills underneath
+function buildRamp(js) {
+  var x0 = js.rampStart, x1 = js.end;
+  // Sample every 10 px, plus the exact corners at the lip so the drop stays crisp
+  var xs = [];
+  for (var x = x0; x < x1; x += 10) xs.push(x);
+  xs.push(js.lip, js.lip + TERRAIN.segW, x1);
+  xs = xs.filter(function (v) { return v >= x0 && v <= x1; }).sort(function (a, b) { return a - b; });
   var top = [], base = [];
-  for (var x = x0; x <= x1 + 0.5; x += 10) {
+  xs.forEach(function (x) {
     top.push({ x: x, y: groundHeightAt(x) });
-    base.push({ x: x, y: hillsHeightAt(x) + 4 });
-  }
+    base.push({ x: x, y: baseHeightAt(x) + 4 });
+  });
   var g = new PIXI.Graphics();
   g.poly(top.concat(base.reverse())).fill(0x8a5a32);
   // Support posts under the ramp
   for (var px = x0 + 60; px < x1 - 20; px += 70) {
-    g.moveTo(px, groundHeightAt(px)).lineTo(px, hillsHeightAt(px));
+    g.moveTo(px, groundHeightAt(px)).lineTo(px, baseHeightAt(px));
   }
   g.stroke({ width: 3, color: 0x5e3b1e });
   // Riding surface
@@ -176,11 +279,11 @@ function buildChunk(ch) {
   for (var i = 1; i < top.length; i++) g.lineTo(top[i].x, top[i].y);
   g.stroke({ width: 8, color: 0x4f9a3a, join: 'round' });
   c.addChild(g);
-  // Jump ramps that start in this chunk: a wooden kicker drawn over the ground
+  // Jump ramps (with any table top and landing downhill) that start in this chunk, drawn over the ground
   var period = TERRAIN.jumpEveryM * PX_PER_M;
-  for (var m = Math.max(1, Math.floor((ch.x0 - START_X) / period)); jumpLipX(m) - TERRAIN.jumpLength < ch.x1; m++) {
-    var rs = jumpLipX(m) - TERRAIN.jumpLength;
-    if (rs >= ch.x0) ramps.addChild(buildRamp(rs, jumpLipX(m) + TERRAIN.segW));
+  for (var m = Math.max(1, Math.floor((ch.x0 - START_X) / period)); jumpSpec(m).rampStart < ch.x1; m++) {
+    var js = jumpSpec(m);
+    if (js.rampStart >= ch.x0 && js.rampStart < ch.x1) ramps.addChild(buildRamp(js));
   }
   var step = 50 * PX_PER_M;
   var first = Math.ceil((ch.x0 - START_X) / step);

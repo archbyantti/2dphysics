@@ -42,33 +42,54 @@ function createCar(x) {
     friction: 0.1,
     frictionAir: MOTOR.bodyAirFriction
   });
-  Matter.Body.setDensity(chassis, 0.0002);
+  Matter.Body.setDensity(chassis, SUSPENSION.chassisDensity);
 
   // Wheels sit below the base center
   var wheelY = cy + wheelSize;
   var wheelOpts = function () {
-    return { collisionFilter: filter(), friction: 0.9, density: 0.004, frictionAir: MOTOR.bodyAirFriction };
+    return { collisionFilter: filter(), friction: 0.9, density: SUSPENSION.wheelDensity, frictionAir: MOTOR.bodyAirFriction };
   };
   var wheelA = Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, wheelOpts());
   var wheelB = Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, wheelOpts());
   wheelA.freeInertia = wheelA.inertia;  // Restored when the brake releases a held wheel
   wheelB.freeInertia = wheelB.inertia;
 
-  // Axles (constraints) attach each wheel to the chassis. The cabin moves the chassis
-  // center of mass, so anchor points are measured from the chassis position.
-  var axle = function (wheel) {
-    return Matter.Constraint.create({
-      bodyB: chassis,
-      pointB: { x: wheel.position.x - chassis.position.x, y: wheel.position.y - chassis.position.y },
-      bodyA: wheel,
-      stiffness: 1,
-      length: 0
-    });
+  // Suspension (invisible). Each wheel hangs on a rigid trailing arm, pivoted on the chassis toward
+  // the car's middle, so it can only swing up and down, not move fore and aft. A spring-damper from a
+  // point above the wheel carries the weight. Anchor points are measured from the chassis position
+  // (its center of mass, which the cabin moves) while the car is still level.
+  var rel0 = function (wheel, dx, dy) {
+    return { x: wheel.position.x - chassis.position.x + dx, y: wheel.position.y - chassis.position.y + dy };
   };
-  var axleA = axle(wheelA);
-  var axleB = axle(wheelB);
+  var suspension = function (wheel, armDir) {
+    var arm = Matter.Constraint.create({
+      bodyA: wheel,
+      bodyB: chassis,
+      pointB: rel0(wheel, armDir * SUSPENSION.armLength, 0),
+      length: SUSPENSION.armLength,
+      stiffness: 1,
+      damping: 0
+    });
+    var spring = Matter.Constraint.create({
+      bodyA: wheel,
+      bodyB: chassis,
+      pointB: rel0(wheel, 0, -SUSPENSION.springLength),
+      // Preload: a spring longer than the gap pushes the body up against its own weight to ride height
+      length: SUSPENSION.springLength + SUSPENSION.preload,
+      stiffness: SUSPENSION.stiffness,
+      damping: 0  // Damping is done by updateDampers (Matter.js constraint damping is too weak)
+    });
+    return [arm, spring];
+  };
+  var suspA = suspension(wheelA, 1);   // Rear wheel: arm points forward
+  var suspB = suspension(wheelB, -1);  // Front wheel: arm points back
 
-  World.add(world, [chassis, wheelA, wheelB, axleA, axleB]);
+  // Motor and brake work in units of the original heavy wheel; scale by actual wheel inertia so
+  // the drive force at the road stays the same when the wheel mass changes
+  var refInertia = Bodies.circle(0, 0, wheelSize, { density: 0.004 }).inertia;
+  var torqueGain = refInertia / wheelA.inertia;
+
+  World.add(world, [chassis, wheelA, wheelB].concat(suspA, suspB));
 
   // Side windows follow the cabin slopes; stored relative to the chassis position so the
   // renderer can rotate them with the body. They are decoration only, not physics.
@@ -86,7 +107,9 @@ function createCar(x) {
   var exhaust = rel([{ x: -130, y: 8 }])[0];
 
   car = {
-    all: [chassis, wheelA, wheelB, axleA, axleB],  // Everything added to the world
+    all: [chassis, wheelA, wheelB].concat(suspA, suspB),  // Everything added to the world (bodies first)
+    torqueGain: torqueGain,
+    springs: [suspA[1], suspB[1]],  // Spring constraints; updateDampers works along them
     color: '#e74c3c',
     windows: windows,
     exhaust: exhaust,
@@ -172,7 +195,7 @@ function updateCarMotor(dt) {
   } else if (drive === 0) {
     tau = -rim * MOTOR.engineBrake;  // Engine braking when off the throttle
   }
-  var brakeStep = MOTOR.brakeDecel / car.wheelR * k;  // Spin the brake can remove this step, rad
+  var brakeStep = MOTOR.brakeDecel / car.wheelR * k * car.torqueGain;  // Spin the brake can remove this step
   car.wheels.forEach(function (wl) {
     var w = Matter.Body.getAngularVelocity(wl);
     if (brake) {
@@ -189,7 +212,32 @@ function updateCarMotor(dt) {
     }
     // Air drag resists wheel spin
     var t = tau - MOTOR.airDrag * w * Math.abs(w);
-    Matter.Body.setAngularVelocity(wl, w + t * MOTOR.torqueScale * k);
+    Matter.Body.setAngularVelocity(wl, w + t * MOTOR.torqueScale * k * car.torqueGain);
+  });
+}
+
+// Shock absorbers: along each spring, a force against the speed at which the spring compresses or
+// extends, applied equally and oppositely to the wheel and to the body at the spring's top mount (so it
+// also damps the body's pitch). Call once per physics step, before Engine.update; `dt` is the step (ms).
+function updateDampers(dt) {
+  if (!car) return;
+  var ch = car.chassis;
+  var v = Matter.Body.getVelocity(ch), av = Matter.Body.getAngularVelocity(ch);
+  car.springs.forEach(function (sp) {
+    var wl = sp.bodyA;
+    var top = Matter.Constraint.pointBWorld(sp);
+    var dx = wl.position.x - top.x, dy = wl.position.y - top.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = dx / len, ny = dy / len;
+    // Velocity of the top mount: body velocity plus rotation about the body's center of mass
+    var rx = top.x - ch.position.x, ry = top.y - ch.position.y;
+    var mvx = v.x - av * ry, mvy = v.y + av * rx;
+    var wv = Matter.Body.getVelocity(wl);
+    var rel = (wv.x - mvx) * nx + (wv.y - mvy) * ny;  // > 0: spring extending
+    // Force so the damping per unit of time does not depend on the step length
+    var f = -SUSPENSION.damping * rel * (1000 / 60) / dt;
+    Matter.Body.applyForce(wl, wl.position, { x: f * nx, y: f * ny });
+    Matter.Body.applyForce(ch, top, { x: -f * nx, y: -f * ny });
   });
 }
 

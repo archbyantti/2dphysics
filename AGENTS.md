@@ -11,7 +11,7 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | src/util.js              | Helpers: `screenToWorld`, `worldToScreen`, `impactSpeed`, `pairHas`              |
 | src/sound.js             | Procedural Web Audio: engine voice driven by `car.engine`, box knock, landing thump |
 | src/car.js               | Car creation, engine + automatic 4+R gearbox (`car.engine`), and `resetCar` (R) |
-| src/terrain.js           | Endless rolling ground with a jump ramp every 100 m; `groundHeightAt(x)`, streaming |
+| src/terrain.js           | Endless ground: hills and jumps (every 100 m) grow with distance; `jumpSpec`, streaming |
 | src/world.js             | Start wall, box spawn/remove, lost-box cleanup, box counter, distance/gear HUD   |
 | src/particles.js         | Particle pool (`spawnParticle`, update, draw by layer); decoration, not physics |
 | src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust; tuning in `FX`             |
@@ -96,11 +96,19 @@ The application follows a straightforward loop:
    endless rolling terrain (`src/terrain.js`) built from static convex quads, created in chunks ahead of the car
    and removed behind it; only a tall start wall closes the left side. World units are pixels, `PX_PER_M` = 60.
    Use `groundHeightAt(x)` for the surface anywhere and `terrainBodiesNear(x)` for contact queries, never all
-   terrain bodies. Boxes whose ground was unloaded fall and are removed.
+   terrain bodies. Boxes whose ground was unloaded fall and are removed. Difficulty grows with distance: hills
+   scale up to `TERRAIN.hillsMaxScale`, and each jump (`jumpSpec(m)`, deterministic per jump number) is bigger and
+   one of four kinds: kicker, tabletop, ramp, or landing (drop onto a downhill). Tall jumps that a slow car might
+   only roll off must not end in a full-height cliff (tabletops get a downhill for that reason). About half of
+   the jumps from the third on start with a drop-in: a steep downhill that leaves the ground permanently lower
+   (`dropOffset`), so the car gains real speed. Its top must curve over at least as gently as a car's flight
+   (`TERRAIN.dropCrestR`) or the car takes off and loses the speed on landing. The hills are graded flat under
+   each jump zone, so ramps and drop-ins keep their designed shape.
 2. **PixiJS Renderer** (`src/render.js`, PixiJS 8 via WebGL) — Each body gets a Pixi display object whose shape
    is built once in body-local coordinates; per frame only position and rotation are copied from Matter.js. The
    world lives in one container whose position/scale are the pan offset and zoom. Pixi's own ticker is off: the main
-   loop calls `draw()`, which ends with `app.render()`. Layer order: sky (stars and parallax hills, screen space), terrain chunks
+   loop calls `draw()`, which ends with `app.render()`. Layer order: sky (stars, two far hill layers), far palms, near hills, near palms (all screen space with
+   parallax; palm sprites are pooled), terrain chunks
    with distance markers, walls, boxes,
    `back` particles (smoke), car, `front` particles (dust, mud). Particles are updated once per frame with the
    frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is not used.
@@ -123,6 +131,10 @@ When working on this repository:
   shifting); `car.engine` is the single source of truth that the sound and the HUD read. Tune driving in
   `MOTOR` (gear `top` speeds and `torque`), not in the sound code. The car uses a low `frictionAir`
   (`MOTOR.bodyAirFriction`); Matter.js's default would cap its speed.
+- Suspension (`SUSPENSION` in `src/state.js`) is invisible: each wheel hangs on a rigid trailing arm plus a
+  spring constraint, and most of the mass is in the body. Shock absorbers are applied by hand in `updateDampers`
+  (once per substep, before `Engine.update`); Matter.js constraint damping barely damps body pitch. Motor and brake changes to wheel spin are
+  multiplied by `car.torqueGain` (reference inertia / wheel inertia), so changing wheel mass keeps the drive force.
 - Braking is friction (`MOTOR.brakeDecel`): it removes wheel spin at a steady rate, and a wheel that has stopped
   is held by giving it infinite inertia (`lockWheel`), released again when the brake lets go. A proportional
   brake (spin x factor) never holds the car on a slope.
