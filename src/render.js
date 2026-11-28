@@ -59,15 +59,24 @@ async function initRenderer() {
     g.fillRect(0, 0, w, h);
   });
 
-  scene.grid = new PIXI.Graphics();
+  scene.sky = new PIXI.Graphics();       // Screen-space stars and parallax hills
   scene.world = new PIXI.Container();
+  scene.terrain = new PIXI.Container();
+  scene.ramps = new PIXI.Container();   // Above all ground chunks, since a ramp can cross a chunk border
   scene.walls = new PIXI.Graphics();
   scene.boxes = new PIXI.Container();
   scene.back = new PIXI.Container();    // Particles behind the car (smoke)
   scene.carLayer = new PIXI.Container();
   scene.front = new PIXI.Container();   // Particles in front of the car (dust, mud)
-  scene.world.addChild(scene.walls, scene.boxes, scene.back, scene.carLayer, scene.front);
-  app.stage.addChild(scene.grid, scene.world);
+  scene.world.addChild(scene.terrain, scene.ramps, scene.walls, scene.boxes, scene.back, scene.carLayer, scene.front);
+  app.stage.addChild(scene.sky, scene.world);
+
+  // Fixed star field (fractions of the screen), drawn with a slight parallax
+  scene.stars = [];
+  var seed = 7;
+  var rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (var i = 0; i < 90; i++) scene.stars.push({ x: rnd(), y: rnd() * 0.6, r: 0.6 + rnd() * 1.2, a: 0.2 + rnd() * 0.5 });
+  scene.chunkGfx = new Map();  // Terrain chunk -> { ground, ramps } containers
 
   scene.wallsFor = null;      // The walls array the wall graphics were built from
   scene.boxGfx = new Map();   // Box body -> Graphics
@@ -80,20 +89,129 @@ function resizeRenderer() {
   if (app) app.renderer.resize(W, H);
 }
 
-// Background grid in screen space (follows pan and zoom)
-function drawGrid() {
-  var g = scene.grid;
+// Screen-space backdrop: stars and two layers of distant hills. Each layer moves with the camera
+// by its parallax factor (0 = fixed to the screen, 1 = moves with the world).
+function drawSky() {
+  var g = scene.sky;
   g.clear();
-  var gridSize = 50 * zoom;
-  if (gridSize < 10) return;
-  var startX = ((panOffset.x % gridSize) + gridSize) % gridSize;
-  var startY = ((panOffset.y % gridSize) + gridSize) % gridSize;
-  for (var x = startX; x < W; x += gridSize) g.moveTo(x, 0).lineTo(x, H);
-  for (var y = startY; y < H; y += gridSize) g.moveTo(0, y).lineTo(W, y);
-  g.stroke({ width: 1, color: 0xffffff, alpha: 0.06 });
+  var sx = function (fx, f) { return (((fx * W + panOffset.x * f) % W) + W) % W; };
+  scene.stars.forEach(function (st) {
+    g.circle(sx(st.x, 0.02), st.y * H, st.r).fill({ color: 0xffffff, alpha: st.a });
+  });
+  drawHillLayer(g, 0.12, 0.50, 70, 0x24264a);
+  drawHillLayer(g, 0.3, 0.64, 55, 0x2c2f55);
 }
 
-// Walls are static: rebuild their graphics only when the walls are recreated (resize)
+function drawHillLayer(g, f, baseFrac, amp, color) {
+  var shift = -panOffset.x * f;
+  var baseY = H * baseFrac + (panOffset.y - H * 0.62) * f * 0.5;
+  var pts = [];
+  for (var x = 0; x <= W + 20; x += 20) {
+    var u = x + shift;
+    pts.push({ x: x, y: baseY - amp * (0.6 * Math.sin(u / 260) + 0.4 * Math.sin(u / 97 + 1.7)) });
+  }
+  pts.push({ x: W + 20, y: H }, { x: 0, y: H });
+  g.poly(pts).fill(color);
+}
+
+// Surface points of the terrain from x0 to x1 (inclusive), one per ground quad
+function surfacePoints(x0, x1) {
+  var pts = [];
+  for (var x = x0; x <= x1 + 0.5; x += TERRAIN.segW) pts.push({ x: x, y: groundHeightAt(x) });
+  return pts;
+}
+
+// Distance post with a sign, standing on the ground at world x
+function buildMarker(x, label) {
+  var y = groundHeightAt(x);
+  var c = new PIXI.Container();
+  var g = new PIXI.Graphics();
+  g.rect(x - 3, y - 95, 6, 95).fill(0xcfcfcf);
+  g.roundRect(x - 42, y - 128, 84, 36, 6).fill(0xf4f1e8).stroke({ width: 2, color: 0x333333 });
+  var t = new PIXI.Text({
+    text: label,
+    style: { fontFamily: 'Arial', fontSize: 20, fontWeight: 'bold', fill: 0x2a2a2a }
+  });
+  t.resolution = 2;
+  t.anchor.set(0.5);
+  t.position.set(x, y - 110);
+  c.addChild(g, t);
+  return c;
+}
+
+// Wooden jump ramp from x0 to x1: planks between the ramp surface and the hills underneath
+function buildRamp(x0, x1) {
+  var top = [], base = [];
+  for (var x = x0; x <= x1 + 0.5; x += 10) {
+    top.push({ x: x, y: groundHeightAt(x) });
+    base.push({ x: x, y: hillsHeightAt(x) + 4 });
+  }
+  var g = new PIXI.Graphics();
+  g.poly(top.concat(base.reverse())).fill(0x8a5a32);
+  // Support posts under the ramp
+  for (var px = x0 + 60; px < x1 - 20; px += 70) {
+    g.moveTo(px, groundHeightAt(px)).lineTo(px, hillsHeightAt(px));
+  }
+  g.stroke({ width: 3, color: 0x5e3b1e });
+  // Riding surface
+  g.moveTo(top[0].x, top[0].y);
+  for (var i = 1; i < top.length; i++) g.lineTo(top[i].x, top[i].y);
+  g.stroke({ width: 8, color: 0xc28d55, join: 'round' });
+  return g;
+}
+
+// Ground of one chunk (deep dirt, a lighter topsoil band, grass on top, distance markers) and,
+// separately, the jump ramps that start in it
+function buildChunk(ch) {
+  var c = new PIXI.Container();
+  var ramps = new PIXI.Container();
+  // Overlap one quad into the next chunk so no seam shows between chunks
+  var top = surfacePoints(ch.x0, ch.x1 + TERRAIN.segW);
+  var last = top[top.length - 1];
+  var g = new PIXI.Graphics();
+  g.poly(top.concat([{ x: last.x, y: 3000 }, { x: top[0].x, y: 3000 }])).fill(0x3a2a20);
+  var band = top.concat(top.slice().reverse().map(function (p) { return { x: p.x, y: p.y + 26 }; }));
+  g.poly(band).fill(0x5a3f2c);
+  g.moveTo(top[0].x, top[0].y);
+  for (var i = 1; i < top.length; i++) g.lineTo(top[i].x, top[i].y);
+  g.stroke({ width: 8, color: 0x4f9a3a, join: 'round' });
+  c.addChild(g);
+  // Jump ramps that start in this chunk: a wooden kicker drawn over the ground
+  var period = TERRAIN.jumpEveryM * PX_PER_M;
+  for (var m = Math.max(1, Math.floor((ch.x0 - START_X) / period)); jumpLipX(m) - TERRAIN.jumpLength < ch.x1; m++) {
+    var rs = jumpLipX(m) - TERRAIN.jumpLength;
+    if (rs >= ch.x0) ramps.addChild(buildRamp(rs, jumpLipX(m) + TERRAIN.segW));
+  }
+  var step = 50 * PX_PER_M;
+  var first = Math.ceil((ch.x0 - START_X) / step);
+  for (var m = Math.max(1, first); START_X + m * step < ch.x1; m++) {
+    c.addChild(buildMarker(START_X + m * step, (m * 50) + ' m'));
+  }
+  // START sign behind the car's starting spot, so the car does not hide it
+  if (ch.index === 0) c.addChild(buildMarker(START_X - 210, 'START'));
+  return { ground: c, ramps: ramps };
+}
+
+// Build graphics for newly loaded chunks and destroy those of unloaded ones
+function syncTerrain() {
+  terrainChunks.forEach(function (ch) {
+    if (!scene.chunkGfx.has(ch)) {
+      var c = buildChunk(ch);
+      scene.terrain.addChild(c.ground);
+      scene.ramps.addChild(c.ramps);
+      scene.chunkGfx.set(ch, c);
+    }
+  });
+  scene.chunkGfx.forEach(function (c, ch) {
+    if (terrainChunks.get(ch.index) !== ch) {
+      c.ground.destroy({ children: true });
+      c.ramps.destroy({ children: true });
+      scene.chunkGfx.delete(ch);
+    }
+  });
+}
+
+// Walls are static: rebuild their graphics only when the walls array is replaced
 function syncWalls() {
   if (scene.wallsFor === walls) return;
   scene.wallsFor = walls;
@@ -239,9 +357,10 @@ function syncParticles() {
 // Draw one frame
 function draw() {
   if (!app || !isFinite(zoom) || zoom <= 0) return;
-  drawGrid();
+  drawSky();
   scene.world.position.set(panOffset.x, panOffset.y);
   scene.world.scale.set(zoom);
+  syncTerrain();
   syncWalls();
   syncBoxes();
   syncCar();

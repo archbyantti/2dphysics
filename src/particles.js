@@ -26,7 +26,6 @@ function spawnParticle(o) {
 // Advance all particles by `ms` of simulation time
 function updateParticles(ms) {
   var s = ms / 1000;
-  var groundY = walls.length ? walls[0].bounds.min.y : Infinity;
   var keep = 0;
   for (var i = 0; i < particles.length; i++) {
     var p = particles[i];
@@ -39,8 +38,9 @@ function updateParticles(ms) {
     p.x += p.vx * s;
     p.y += p.vy * s;
     p.size += p.grow * s;
-    if (p.bounce && p.y > groundY - p.size) {
-      p.y = groundY - p.size;
+    var gy = p.bounce ? groundHeightAt(p.x) : 0;
+    if (p.bounce && p.y > gy - p.size) {
+      p.y = gy - p.size;
       p.vy *= -0.3;
       p.vx *= 0.5;
     }

@@ -26,16 +26,23 @@ function check(name, ok, detail) {
 
   check('canvas exists', await page.locator('canvas').count() === 1);
 
-  // Count collision sounds by wrapping the global the collision handler calls.
-  await page.evaluate(() => {
-    window.__collisionSounds = 0;
-    var orig = playCollisionSound;
-    playCollisionSound = function () { window.__collisionSounds++; orig.apply(this, arguments); };
-  });
+  // The car settles on the terrain at the start.
+  await page.waitForTimeout(600);
+  const gap = await page.evaluate(() => Math.min.apply(null, car.wheels.map((w) =>
+    groundHeightAt(w.position.x) - (w.position.y + car.wheelR))));
+  check('car rests on the ground', Math.abs(gap) < 8, gap.toFixed(1) + ' px');
 
-  // Spawn five boxes away from the car.
+  // Record impact sounds ('knock' or 'thump') by wrapping the global the collision handler calls.
+  await page.evaluate(() => {
+    window.__sounds = [];
+    var orig = playCollisionSound;
+    playCollisionSound = function (kind) { window.__sounds.push(kind); orig.apply(this, arguments); };
+  });
+  const soundCount = (kind) => page.evaluate((k) => window.__sounds.filter((s) => s === k).length, kind);
+
+  // Spawn five boxes ahead of the car (left of it is the start wall and outside the world).
   for (let i = 0; i < 5; i++) {
-    await page.mouse.click(150 + i * 90, 120);
+    await page.mouse.click(820 + i * 80, 120);
   }
   check('five boxes spawned', await page.evaluate(() => boxes.length) === 5,
     await page.evaluate(() => boxes.length));
@@ -43,8 +50,8 @@ function check(name, ok, detail) {
 
   // Let the boxes fall and hit the ground.
   await page.waitForTimeout(1500);
-  check('collision sound played', await page.evaluate(() => window.__collisionSounds) > 0,
-    await page.evaluate(() => window.__collisionSounds));
+  const knocks = await soundCount('knock');
+  check('boxes landing make a knock', knocks > 0, knocks);
 
   // The car has a cabin that boxes can land on.
   check('car has a cabin', await page.evaluate(() => car.chassis.parts.length) === 3);
@@ -72,11 +79,19 @@ function check(name, ok, detail) {
   check('shift+click removes a box', await page.evaluate(() => boxes.length) === before - 1,
     await page.evaluate(() => boxes.length));
 
-  // Drive right with the up arrow.
+  // Drive right with the up arrow. Clear the test boxes first so they cannot block the car.
+  await page.evaluate(() => {
+    World.remove(world, boxes);
+    boxes.length = 0;
+    updateCount();
+  });
   await page.locator('canvas').focus();
   const x0 = await page.evaluate(() => car.chassis.position.x);
+  const idleRpm = await page.evaluate(() => car.engine.rpm);
   await page.keyboard.down('ArrowUp');
   await page.waitForTimeout(400);
+  const revs = await page.evaluate(() => car.engine.rpm);
+  check('engine revs up with throttle', revs > idleRpm + 1000, Math.round(idleRpm) + ' -> ' + Math.round(revs) + ' rpm');
   // Throttle makes exhaust smoke (back layer) and the tyres throw dirt (front layer).
   const fx = await page.evaluate(() => ({
     smoke: particles.filter((p) => p.layer === 'back').length,
@@ -85,38 +100,106 @@ function check(name, ok, detail) {
   }));
   check('exhaust smoke while accelerating', fx.smoke > 0, fx.smoke);
   check('tyre dirt while accelerating', fx.dirt > 0, fx.dirt);
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(900);
+  const gear = await page.evaluate(() => car.engine.gear);
+  check('gearbox shifts up while accelerating', gear >= 2, 'gear ' + gear);
+  check('gear shown in the HUD', (await page.textContent('#gear')) === String(gear));
   await page.keyboard.up('ArrowUp');
   const x1 = await page.evaluate(() => car.chassis.position.x);
   check('car drives forward', x1 - x0 > 20, Math.round(x1 - x0) + ' px');
   check('particle count stays capped', await page.evaluate(() => particles.length <= MAX_PARTICLES));
 
-  // The C key toggles camera centering and shows it in the help text.
+  const shown = parseInt(await page.textContent('#dist'), 10);
+  check('distance shown in meters', shown > 5, shown + ' m');
+
+  // Down arrow brakes, then engages reverse and backs up.
+  await page.keyboard.down('ArrowDown');
+  await page.waitForTimeout(2500);
+  const rev = await page.evaluate(() => ({ gear: car.engine.gear, speed: car.speed }));
+  await page.keyboard.up('ArrowDown');
+  check('down arrow reverses', rev.gear === -1 && rev.speed < -0.3, 'gear ' + rev.gear + ', speed ' + rev.speed.toFixed(1));
+  check('reverse shown as R', (await page.textContent('#gear')) === 'R');
+
+  // The C key toggles camera follow (on by default) and shows it in the help text.
   await page.keyboard.press('KeyC');
-  check('centering status shown', (await page.textContent('#info')).includes('centering ON'));
+  check('centering status shown', (await page.textContent('#info')).includes('centering OFF'));
   await page.keyboard.press('KeyC');
+  check('centering back on', (await page.textContent('#info')).includes('centering ON'));
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'simulation-test.png') });
 
-  // Walls follow the window size.
-  await page.setViewportSize({ width: 1600, height: 900 });
-  await page.waitForTimeout(300);
-  const ground = await page.evaluate(() => ({ top: walls[0].bounds.min.y, right: walls[2].bounds.min.x }));
-  check('ground moves on resize', ground.top === 900, ground.top);
-  check('right wall moves on resize', ground.right === 1600, ground.right);
-
-  // Shrinking the window keeps the car and boxes inside the new walls.
-  await page.keyboard.down('ArrowUp');
-  await page.waitForTimeout(800);
-  await page.keyboard.up('ArrowUp');
-  await page.setViewportSize({ width: 700, height: 500 });
-  await page.waitForTimeout(1000);
-  const outside = await page.evaluate(() => {
-    var ok = function (b) { return b.position.x > 0 && b.position.x < W && b.position.y < H; };
-    return [car.chassis].concat(boxes).filter((b) => !ok(b))
-      .map((b) => (b === car.chassis ? 'car' : 'box') + '@' + Math.round(b.position.x) + ',' + Math.round(b.position.y));
+  // Terrain streams with the car: jump 600 m ahead and keep driving on solid ground.
+  await page.evaluate(() => {
+    var x = START_X + 600 * PX_PER_M;
+    World.remove(world, car.all);
+    updateTerrain(x);
+    createCar(x);
   });
-  check('bodies stay inside after shrinking', outside.length === 0, outside.join(' ') || undefined);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { window.__sounds.length = 0; });
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(1500);
+  await page.keyboard.up('ArrowUp');
+  // Rolling over the hills (and the seams between ground pieces) must stay silent.
+  const rolling = await page.evaluate(() => window.__sounds.length);
+  check('no impact sounds while driving on the ground', rolling === 0, rolling);
+  const far = await page.evaluate(() => ({
+    above: groundHeightAt(car.chassis.position.x) - car.chassis.position.y,
+    chunks: terrainChunks.size,
+    startUnloaded: !terrainChunks.has(0),
+    dist: parseInt(document.getElementById('dist').textContent, 10)
+  }));
+  check('car stays on streamed ground far away', far.above > 0 && far.above < 300, Math.round(far.above) + ' px');
+  check('only nearby terrain is loaded', far.chunks <= 7 && far.startUnloaded, far.chunks + ' chunks');
+  check('distance counts from the start', far.dist >= 600, far.dist + ' m');
+
+  // Dropping the car from a height lands with a thump.
+  await page.evaluate(() => {
+    window.__sounds.length = 0;
+    car.all.slice(0, 3).forEach((b) => {
+      Matter.Body.translate(b, { x: 0, y: -350 });
+      Matter.Body.setVelocity(b, { x: 0, y: 0 });
+    });
+  });
+  await page.waitForTimeout(1500);
+  const thumps = await soundCount('thump');
+  check('landing from a height thumps', thumps >= 1, thumps);
+
+  // Jump ramps: at speed, the ramp before the 700 m marker launches the car into the air.
+  await page.evaluate(() => {
+    var x = jumpLipX(7) - 2400;
+    World.remove(world, car.all);
+    updateTerrain(x);
+    createCar(x);
+    car.engine.gear = 4;
+    car.all.slice(0, 3).forEach((b) => Matter.Body.setVelocity(b, { x: 20, y: 0 }));
+    car.wheels.forEach((w) => Matter.Body.setAngularVelocity(w, 20 / car.wheelR));
+    window.__sounds.length = 0;
+  });
+  await page.keyboard.down('ArrowUp');
+  const airborne = await page.waitForFunction(() => car.wheels.every((w) =>
+    groundHeightAt(w.position.x) - (w.position.y + car.wheelR) > 25), null, { timeout: 5000, polling: 'raf' })
+    .then(() => true, () => false);
+  await page.keyboard.up('ArrowUp');
+  check('jump ramp launches the car', airborne);
+  await page.waitForTimeout(2500);
+  const landed = await soundCount('thump');
+  check('landing after the jump thumps', landed >= 1, landed);
+
+  // R puts a flipped car back on its wheels.
+  await page.evaluate(() => {
+    [car.chassis].concat(car.wheels).forEach((b) => Matter.Body.rotate(b, Math.PI, car.chassis.position));
+  });
+  await page.keyboard.press('KeyR');
+  await page.waitForTimeout(500);
+  check('R resets the car upright', await page.evaluate(() => Math.abs(car.chassis.angle) < 0.3),
+    await page.evaluate(() => car.chassis.angle.toFixed(2)));
+
+  // The renderer follows the window size.
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.waitForTimeout(300);
+  const scr = await page.evaluate(() => [app.renderer.screen.width, app.renderer.screen.height]);
+  check('renderer resizes with the window', scr[0] === 900 && scr[1] === 600, scr.join('x'));
 
   check('no console errors', errors.length === 0, errors.join(' | ') || undefined);
 

@@ -10,11 +10,13 @@ async function init() {
     timing: { timeScale: 1.0 }
   });
   world = engine.world;
-  addWalls();
-  createCar();
+  addStartWall();
+  updateTerrain(START_X);
+  createCar(START_X);
   setUpCollisionSound();
   setUpImpactDust();
   await initRenderer();
+  updateCameraPosition(0);
   setUpCanvas();
   startLoop();
 }
@@ -30,16 +32,19 @@ function startLoop() {
       var simMs = Math.min(now - last, 100) * SIM_SPEED;
       var n = Math.ceil(simMs / MAX_STEP_MS);
       var h = simMs / n;
+      // Ground under the car must exist before physics runs
+      updateTerrain(car.chassis.position.x);
       for (var i = 0; i < n; i++) {
         updateCarMotor(h);
         Engine.update(engine, h);
       }
       updateEffects(simMs);
       removeLostBoxes();
+      updateDistance();
+      updateCameraPosition(Math.min(now - last, 100));
     }
     last = now;
     updateEngineSound();
-    updateCameraPosition();
     draw();
     requestAnimationFrame(loop);
   }

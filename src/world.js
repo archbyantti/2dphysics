@@ -1,73 +1,27 @@
-// Create boundary walls around the current window size
-function addWalls() {
-  var thick = 40;
-  var opts = function () {
-    return { isStatic: true, friction: 1, collisionFilter: { category: CAT.wall, mask: CAT.car | CAT.box } };
-  };
-  var ground = Bodies.rectangle(W / 2, H + thick / 2, W + 2 * thick, thick, opts());
-  var leftWall = Bodies.rectangle(-thick / 2, 0, thick, H * 2, opts());
-  var rightWall = Bodies.rectangle(W + thick / 2, 0, thick, H * 2, opts());
-  walls = [ground, leftWall, rightWall];
-  walls.forEach(function (wl) { wl.renderColor = '#3a4358'; });
+// Tall wall at the start line so nothing can leave the world to the left
+function addStartWall() {
+  var thick = 60, height = 3000;
+  var wall = Bodies.rectangle(-thick / 2, -height / 2 + TERRAIN.depth, thick, height, {
+    isStatic: true,
+    friction: 1,
+    collisionFilter: { category: CAT.ground, mask: CAT.car | CAT.box }
+  });
+  wall.renderColor = '#3a4358';
+  walls = [wall];
   World.add(world, walls);
 }
 
-// Rebuild the walls after the window size changes
-function resizeWalls() {
-  World.remove(world, walls);
-  addWalls();
-  // Pull anything the new walls left outside back into the box (the car first, it is biggest)
-  if (car) pullInside([car.chassis].concat(car.wheels));
-  boxes.forEach(function (b) { pullInside([b]); });
-}
-
-// Every body except those in `group`
-function otherBodies(group) {
-  var all = walls.concat(boxes, car ? [car.chassis].concat(car.wheels) : []);
-  return all.filter(function (b) { return group.indexOf(b) < 0; });
-}
-
-// Lift a group straight up until it overlaps nothing. A body teleported into another one would
-// otherwise be pushed out by the solver, possibly down through the ground.
-function liftClear(bodies) {
-  var others = otherBodies(bodies);
-  for (var i = 0; i < 60; i++) {
-    var hit = bodies.some(function (b) { return Matter.Query.collides(b, others).length > 0; });
-    if (!hit) return;
-    bodies.forEach(function (b) { Matter.Body.translate(b, { x: 0, y: -10 }); });
-  }
-}
-
-// Remove boxes that somehow left the world (fell below the ground)
+// Remove boxes that fell out of the world (e.g. their ground chunk was unloaded behind the car)
 function removeLostBoxes() {
   var before = boxes.length;
   for (var i = boxes.length - 1; i >= 0; i--) {
-    if (boxes[i].position.y > H + 1000) {
-      World.remove(world, boxes[i]);
+    var b = boxes[i];
+    if (b.position.y > groundHeightAt(b.position.x) + 1500) {
+      World.remove(world, b);
       boxes.splice(i, 1);
     }
   }
   if (boxes.length !== before) updateCount();
-}
-
-// Move a group of bodies together so their combined bounds fit inside 0..W, ..H
-function pullInside(bodies) {
-  var minX = Infinity, maxX = -Infinity, maxY = -Infinity;
-  bodies.forEach(function (b) {
-    minX = Math.min(minX, b.bounds.min.x);
-    maxX = Math.max(maxX, b.bounds.max.x);
-    maxY = Math.max(maxY, b.bounds.max.y);
-  });
-  var dx = 0, dy = 0;
-  if (maxX > W) dx = W - maxX;
-  if (minX + dx < 0) dx = -minX;
-  if (maxY > H) dy = H - maxY;
-  if (dx === 0 && dy === 0) return;
-  bodies.forEach(function (b) {
-    Matter.Body.translate(b, { x: dx, y: dy });
-    Matter.Body.setVelocity(b, { x: 0, y: 0 });
-  });
-  liftClear(bodies);
 }
 
 // Remove the topmost box under a screen position (Shift+click)
@@ -93,7 +47,7 @@ function addBox(wx, wy) {
     density: 0.0012,
     chamfer: { radius: 4 },
     slop: 0.01,
-    collisionFilter: { category: CAT.box, mask: CAT.car | CAT.box | CAT.wall }
+    collisionFilter: { category: CAT.box, mask: CAT.car | CAT.box | CAT.ground }
   };
   var b;
   // Randomly choose between rectangle or polygon shape
@@ -114,4 +68,21 @@ function updateCount() {
   if (countEl) {
     countEl.textContent = 'Boxes: ' + boxes.length;
   }
+}
+
+// Distance the car has travelled from the start line, in meters
+function carDistanceM() {
+  return car ? Math.max(0, (car.chassis.position.x - START_X) / PX_PER_M) : 0;
+}
+
+// Set an element's text only when it changes (avoids DOM work every frame)
+function setText(id, text) {
+  var el = document.getElementById(id);
+  if (el && el.textContent !== text) el.textContent = text;
+}
+
+// Update the distance and gear displays
+function updateDistance() {
+  setText('dist', Math.round(carDistanceM()) + ' m');
+  if (car) setText('gear', car.engine.gear === -1 ? 'R' : String(car.engine.gear));
 }

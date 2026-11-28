@@ -7,6 +7,8 @@
 body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
 canvas { display: block; cursor: crosshair; }
 #info { position: absolute; top: 10px; left: 10px; color: #ccc; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px; pointer-events: none; font-size: 13px; line-height: 1.6; }
+#dist { position: absolute; top: 52px; right: 10px; color: #fff; background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 6px; pointer-events: none; font-size: 22px; font-weight: bold; }
+#gear { position: absolute; top: 100px; right: 10px; color: #ffd54a; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 6px; pointer-events: none; font-size: 18px; font-weight: bold; min-width: 22px; text-align: center; }
 #count { position: absolute; top: 10px; right: 10px; color: #0f0; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px; pointer-events: none; font-size: 14px; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
@@ -14,12 +16,15 @@ canvas { display: block; cursor: crosshair; }
 </head>
 <body>
 <canvas id="canvas" tabindex="0"></canvas>
-<div id="info">Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom | C: toggle car centering | Space: brake</div>
+<div id="info">Arrows: drive | Space: brake | R: reset car | Left mouse: create box | Shift+click: remove box | Drag: pan view | Ctrl+scroll: zoom | C: toggle car centering</div>
 <div id="count">Boxes: 0</div>
+<div id="dist">0 m</div>
+<div id="gear">1</div>
 <script src="state.js"></script>
 <script src="util.js"></script>
 <script src="sound.js"></script>
 <script src="car.js"></script>
+<script src="terrain.js"></script>
 <script src="world.js"></script>
 <script src="particles.js"></script>
 <script src="effects.js"></script>

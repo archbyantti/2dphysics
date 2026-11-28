@@ -7,15 +7,16 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | File                     | Purpose                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------- |
 | src/index.html           | Page layout, CSS styles, and the ordered `<script>` tags; no application logic   |
-| src/state.js             | Global state and config (world refs, `CAT` bits, `SIM_SPEED`, `MOTOR`)         |
-| src/util.js              | Pure helpers: `screenToWorld`, `worldToScreen`                                   |
-| src/sound.js             | Web Audio engine sound and collision sounds (`setUpCollisionSound`)              |
-| src/car.js               | Car creation (chassis, wheels, axle constraints) and the torque-based motor     |
-| src/world.js             | Walls (rebuilt on resize), box spawn/remove, and the box counter                 |
+| src/state.js             | Global state and config (`CAT`, `PX_PER_M`, `START_X`, `SIM_SPEED`, `MOTOR` gears) |
+| src/util.js              | Helpers: `screenToWorld`, `worldToScreen`, `impactSpeed`, `pairHas`              |
+| src/sound.js             | Procedural Web Audio: engine voice driven by `car.engine`, box knock, landing thump |
+| src/car.js               | Car creation, engine + automatic 4+R gearbox (`car.engine`), and `resetCar` (R) |
+| src/terrain.js           | Endless rolling ground with a jump ramp every 100 m; `groundHeightAt(x)`, streaming |
+| src/world.js             | Start wall, box spawn/remove, lost-box cleanup, box counter, distance/gear HUD   |
 | src/particles.js         | Particle pool (`spawnParticle`, update, draw by layer); decoration, not physics |
 | src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust; tuning in `FX`             |
 | src/render.js            | PixiJS (WebGL) renderer: mirrors bodies, particles and the car as Pixi objects   |
-| src/input.js             | Mouse, keyboard, and wheel handlers; canvas setup, resize, camera follow         |
+| src/input.js             | Mouse, keyboard, and wheel handlers; resize; smooth look-ahead camera follow    |
 | src/main.js              | `init`, the substepped main loop, and the `load` bootstrap                       |
 | test/test-simulation.js  | Playwright smoke test; exits non-zero if any check fails                         |
 | package.json             | Dev dependency (`@playwright/test`) and the `check` / `test` scripts             |
@@ -48,9 +49,12 @@ verify the visual output and interactions.
 
 ## Automated Testing with Playwright
 
-`test/test-simulation.js` opens `src/index.html` (path resolved relative to the script) and checks: box spawning
-and the counter, collision sounds firing, Shift+click removal, driving with the up arrow, the C-key status text,
-walls following a viewport resize, and no console errors. It saves `test/screenshots/simulation-test.png` and
+`test/test-simulation.js` opens `src/index.html` (path resolved relative to the script) and checks: the car
+resting on the terrain, box spawning and the counter, box knocks, the cabin roof, engine revs, upshifts and the
+gear HUD, Shift+click removal,
+effects while driving, the distance HUD, braking into reverse, the C-key status text, terrain streaming 600 m out, silence while
+rolling, a thump when the car is dropped, a jump ramp launching the car (and the landing thump), the R reset, the
+renderer following a viewport resize, and no console errors. It saves `test/screenshots/simulation-test.png` and
 exits with code 1 if any check fails. Add a check here when you add a feature.
 
 ```
@@ -88,11 +92,16 @@ When adding a new script, register it in `index.html` in the correct load order.
 
 The application follows a straightforward loop:
 
-1. **Matter.js Engine** — Handles physics simulation (gravity, collisions, walls).
+1. **Matter.js Engine** — Handles physics (gravity, collisions). The world is open to the right: the ground is
+   endless rolling terrain (`src/terrain.js`) built from static convex quads, created in chunks ahead of the car
+   and removed behind it; only a tall start wall closes the left side. World units are pixels, `PX_PER_M` = 60.
+   Use `groundHeightAt(x)` for the surface anywhere and `terrainBodiesNear(x)` for contact queries, never all
+   terrain bodies. Boxes whose ground was unloaded fall and are removed.
 2. **PixiJS Renderer** (`src/render.js`, PixiJS 8 via WebGL) — Each body gets a Pixi display object whose shape
    is built once in body-local coordinates; per frame only position and rotation are copied from Matter.js. The
    world lives in one container whose position/scale are the pan offset and zoom. Pixi's own ticker is off: the main
-   loop calls `draw()`, which ends with `app.render()`. Layer order: grid (screen space), walls, boxes,
+   loop calls `draw()`, which ends with `app.render()`. Layer order: sky (stars and parallax hills, screen space), terrain chunks
+   with distance markers, walls, boxes,
    `back` particles (smoke), car, `front` particles (dust, mud). Particles are updated once per frame with the
    frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is not used.
 3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
@@ -110,5 +119,11 @@ When working on this repository:
 - Scripts share the global scope and load in tag order — do not convert them to ES modules, since that would break opening `src/index.html` directly from `file://`.
 - Avoid using Matter.js's built-in Render component — it conflicts with custom zoom/pan logic. Always draw through `src/render.js` (PixiJS) instead.
 - Be careful with `mouseConstraint.render.visible` — this property does not exist; set `constraint.render.visible` on the create options instead.
+- The car's engine is simulated in `updateCarMotor` (rpm from wheel speed and gear, torque curve, automatic
+  shifting); `car.engine` is the single source of truth that the sound and the HUD read. Tune driving in
+  `MOTOR` (gear `top` speeds and `torque`), not in the sound code. The car uses a low `frictionAir`
+  (`MOTOR.bodyAirFriction`); Matter.js's default would cap its speed.
+- Impact sounds and impact dust must use `impactSpeed(pair)` (speed along the contact normal), not total relative
+  speed: the ground is many small bodies, so a rolling wheel starts a new collision at every seam.
 - The car is real Matter.js bodies (a chassis and two wheels joined by axle constraints), but it is drawn by the
   custom renderer in `src/render.js`, like everything else.

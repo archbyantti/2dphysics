@@ -6,7 +6,8 @@ var FX = {
   smokeThrottleRate: 45,  // Exhaust puffs per second on throttle
   dirtMaxRate: 90,        // Tyre dirt particles per second per wheel, at most
   mudShare: 0.3,          // Share of tyre dirt that is heavy mud instead of dust
-  impactMinSpeed: 3       // Relative speed (px per 60 Hz step) that kicks up impact dust
+  impactMinSpeed: 3,      // Impact speed (px per 60 Hz step, along the contact normal) for dust
+  landingMinSpeed: 6      // Same for the car hitting the ground (a drop of roughly 45 px or more)
 };
 
 var fxCarry = { smoke: 0, dirt: [0, 0] };  // Fractional particles carried between frames
@@ -52,7 +53,7 @@ function emitExhaust(ms) {
 // Dust and mud flung from a tyre that touches the ground or a box. Spinning faster than the car
 // moves (wheelspin) and braking hard throw the most; plain rolling throws a little at speed.
 function emitWheelDirt(wl, i, ms) {
-  var hits = Matter.Query.collides(wl, walls.concat(boxes));
+  var hits = Matter.Query.collides(wl, terrainBodiesNear(wl.position.x).concat(walls, boxes));
   if (!hits.length) {
     fxCarry.dirt[i] = 0;
     return;
@@ -106,11 +107,11 @@ function emitWheelDirt(wl, i, ms) {
 function setUpImpactDust() {
   Events.on(engine, 'collisionStart', function (e) {
     for (var i = 0; i < e.pairs.length; i++) {
-      var pair = e.pairs[i], a = pair.bodyA, b = pair.bodyB;
-      var dvx = a.velocity.x - b.velocity.x, dvy = a.velocity.y - b.velocity.y;
-      // Raw velocity is per step; normalize to a 60 Hz step like the other thresholds
-      var hit = Math.sqrt(dvx * dvx + dvy * dvy) * (1000 / 60) / (a.deltaTime || 1000 / 60);
-      if (hit < FX.impactMinSpeed) continue;
+      var pair = e.pairs[i];
+      var hit = impactSpeed(pair);
+      // The car rolling over ground seams is not an impact; only a real landing kicks up dust
+      var carOnGround = pairHas(pair, CAT.car) && pairHas(pair, CAT.ground);
+      if (hit < (carOnGround ? FX.landingMinSpeed : FX.impactMinSpeed)) continue;
       var sup = pair.collision.supports && pair.collision.supports[0];
       if (!sup) continue;
       var n = Math.min(10, Math.round(hit * 1.2));

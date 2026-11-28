@@ -1,6 +1,6 @@
 // Help text shown in the info panel
-var HELP_TEXT = 'Left mouse: create box | Shift+click: remove box | Drag center: pan view | ' +
-  'Ctrl+scroll: zoom | C: toggle car centering | Space: brake';
+var HELP_TEXT = 'Arrows: drive | Space: brake | R: reset car | Left mouse: create box | ' +
+  'Shift+click: remove box | Drag: pan view | Ctrl+scroll: zoom | C: toggle car centering';
 
 // Set up canvas event listeners
 function setUpCanvas() {
@@ -18,7 +18,6 @@ function handleResize() {
   W = window.innerWidth;
   H = window.innerHeight;
   resizeRenderer();
-  resizeWalls();
 }
 
 // Handle mouse press
@@ -72,6 +71,7 @@ function handleKeyUp(e) {
     case 'ArrowDown': input.rev = false; break;
     case 'Space': input.brake = false; break;
     case 'KeyC': toggleCarCentering(); break;
+    case 'KeyR': resetCar(); break;
   }
 }
 
@@ -97,12 +97,32 @@ function handleWheel(e) {
   }
 }
 
-// Update camera position to follow car if centered
-function updateCameraPosition() {
-  if (!car) return;
-  if (centerCar) {
-    // Calculate offset to center car in screen
-    panOffset.x = W / 2 - car.chassis.position.x * zoom;
-    panOffset.y = H / 2 - car.chassis.position.y * zoom;
+// Camera follow state: a smoothed look-ahead (world px) and whether to jump straight to the target
+var camAhead = 0;
+var camSnap = true;
+
+// Follow the car smoothly when centering is on. The car sits a bit left of center and the view
+// leads in the driving direction, so you can see the hills coming. `ms` is real frame time.
+function updateCameraPosition(ms) {
+  if (!car || !centerCar) return;
+  var p = car.chassis.position;
+  var v = Matter.Body.getVelocity(car.chassis);
+  var aheadTarget = Math.max(-350, Math.min(350, v.x * 30));
+  var tx, ty;
+  if (camSnap) {
+    camAhead = aheadTarget;
+  } else {
+    camAhead += (aheadTarget - camAhead) * (1 - Math.exp(-ms / 900));
   }
+  tx = W * 0.5 - (p.x + camAhead) * zoom;
+  ty = H * 0.62 - p.y * zoom;
+  if (camSnap) {
+    panOffset.x = tx;
+    panOffset.y = ty;
+    camSnap = false;
+    return;
+  }
+  var a = 1 - Math.exp(-ms / 180);
+  panOffset.x += (tx - panOffset.x) * a;
+  panOffset.y += (ty - panOffset.y) * a;
 }

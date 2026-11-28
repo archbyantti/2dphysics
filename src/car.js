@@ -1,9 +1,12 @@
 // Car composite structure from Matter.js example
-// Creates car with rounded chassis and wheel axles
-function createCar() {
-  var cx = W / 2;
-  var cy = H / 2 + 50;
+// Creates car with rounded chassis and wheel axles, wheels resting on the ground at world x
+function createCar(x) {
   var wheelSize = 48;
+  var cx = x;
+  // Wheel bottoms just above the highest ground under the car (works on a slope too)
+  var top = Infinity;
+  for (var sx = -160; sx <= 160; sx += 20) top = Math.min(top, groundHeightAt(x + sx));
+  var cy = top - wheelSize * 2 - 6;
   var wheelBase = 40;
   var width = 280;
   var height = 70;
@@ -13,7 +16,7 @@ function createCar() {
   // Negative group: car parts never collide with each other
   var group = Matter.Body.nextGroup(true);
   var filter = function () {
-    return { group: group, category: CAT.car, mask: CAT.box | CAT.wall };
+    return { group: group, category: CAT.car, mask: CAT.box | CAT.ground };
   };
 
   // Lower body with rounded ends (chamfer)
@@ -36,14 +39,15 @@ function createCar() {
   var chassis = Matter.Body.create({
     parts: [base, cabin],
     collisionFilter: filter(),
-    friction: 0.1
+    friction: 0.1,
+    frictionAir: MOTOR.bodyAirFriction
   });
   Matter.Body.setDensity(chassis, 0.0002);
 
   // Wheels sit below the base center
   var wheelY = cy + wheelSize;
   var wheelOpts = function () {
-    return { collisionFilter: filter(), friction: 0.9, density: 0.004 };
+    return { collisionFilter: filter(), friction: 0.9, density: 0.004, frictionAir: MOTOR.bodyAirFriction };
   };
   var wheelA = Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, wheelOpts());
   var wheelB = Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, wheelOpts());
@@ -80,49 +84,111 @@ function createCar() {
   var exhaust = rel([{ x: -130, y: 8 }])[0];
 
   car = {
+    all: [chassis, wheelA, wheelB, axleA, axleB],  // Everything added to the world
     color: '#e74c3c',
     windows: windows,
     exhaust: exhaust,
     chassis: chassis,
     wheels: [wheelA, wheelB],
     wheelR: wheelSize,
-    speed: 0
+    speed: 0,
+    // Engine and gearbox state. gear: 1..4 forward, -1 reverse. shiftMs counts down a gear change.
+    engine: { gear: 1, rpm: MOTOR.idleRpm, shiftMs: 0, throttle: false }
   };
 }
 
-// Update car motor physics; call once per physics step
+// Engine torque factor (0..1) at a given rpm: modest at idle, strongest mid-range, fading near the redline
+function torqueCurve(rpm) {
+  var t = (rpm - MOTOR.idleRpm) / (MOTOR.redline - MOTOR.idleRpm);
+  t = Math.max(0, Math.min(1, t));
+  return 0.6 + 0.4 * Math.sin(Math.PI * t);
+}
+
+// Engine rpm for a tyre surface speed (px per 60 Hz step) in gear g
+function rpmFor(rim, g) {
+  var top = g === -1 ? MOTOR.reverse.top : MOTOR.gears[g - 1].top;
+  return Math.abs(rim) / top * MOTOR.redline;
+}
+
+// Update car motor physics; call once per physics step.
+// The engine turns the wheels through a 4+R gearbox: rpm follows the wheel speed in the current gear,
+// torque at the wheels is the engine's torque curve times the gear's ratio, and an automatic gearbox
+// shifts up near the redline and down when the rpm falls. While shifting there is no drive.
 // Velocities are read with getVelocity / getAngularVelocity, which Matter.js normalizes to a
 // 16.67 ms step, and every per-step effect is scaled by `k`, so the motor behaves the same for
 // any step size `dt` (ms).
 function updateCarMotor(dt) {
   if (!car) return;
   var k = dt / (1000 / 60);
+  var eng = car.engine;
   var fwd = carForward();
   var v = Matter.Body.getVelocity(car.chassis);
   var speed = v.x * fwd.x + v.y * fwd.y;  // Project velocity onto forward direction
   car.speed = speed;
-  var tau;
+  // Tyre surface speed (average of both wheels), px per 60 Hz step; positive = forward
+  var rim = 0;
+  car.wheels.forEach(function (wl) { rim += Matter.Body.getAngularVelocity(wl) * car.wheelR / 2; });
+
+  // Direction: up drives forward; down brakes while rolling forward, then engages reverse
+  var brake = input.brake;
+  var drive = 0;
   if (input.accel) {
-    // Torque fades out as forward speed approaches the top speed
-    tau = MOTOR.wheelTorque * Math.max(0, 1 - Math.abs(speed) / MOTOR.topSpeed);
-    // Ensure forward motion on start
-    if (speed < 0.05) tau += 0.00001;
+    if (eng.gear === -1) eng.gear = 1;
+    drive = 1;
   } else if (input.rev) {
-    // Reverse torque fades out as reverse speed approaches its limit
-    tau = -MOTOR.revTorque * Math.max(0, 1 - Math.max(0, -speed) / MOTOR.maxRevSpeed);
-  } else {
-    tau = 0;
+    if (eng.gear !== -1 && speed > 0.6) {
+      brake = true;
+    } else {
+      eng.gear = -1;
+      drive = -1;
+    }
+  }
+  eng.throttle = drive !== 0;
+
+  // Automatic gearbox (forward gears only)
+  var rpm = rpmFor(rim, eng.gear);
+  if (eng.shiftMs > 0) {
+    eng.shiftMs -= dt;
+  } else if (eng.gear > 0) {
+    if (eng.gear < MOTOR.gears.length && rpm > MOTOR.upshiftRpm && drive > 0) {
+      eng.gear++;
+      eng.shiftMs = MOTOR.shiftMs;
+    } else if (eng.gear > 1 && rpm < MOTOR.downshiftRpm) {
+      eng.gear--;
+    }
+    rpm = rpmFor(rim, eng.gear);
+  }
+  // Clutch slip: on throttle from low speed the engine runs above the wheel-driven rpm
+  var floor = eng.throttle ? MOTOR.launchRpm : MOTOR.idleRpm;
+  var target = Math.max(floor, rpm);
+  eng.rpm += (target - eng.rpm) * Math.min(1, 0.3 * k);
+
+  var tau = 0;
+  var gear = eng.gear === -1 ? MOTOR.reverse : MOTOR.gears[eng.gear - 1];
+  if (drive !== 0 && eng.shiftMs <= 0 && rpm < MOTOR.redline) {
+    tau = drive * gear.torque * torqueCurve(eng.rpm);
+  } else if (drive === 0) {
+    tau = -rim * MOTOR.engineBrake;  // Engine braking when off the throttle
   }
   car.wheels.forEach(function (wl) {
     var w = Matter.Body.getAngularVelocity(wl);
-    // Brake (space) removes 10% of the wheel spin per 60 Hz step
-    if (input.brake) {
+    // Brake removes 10% of the wheel spin per 60 Hz step
+    if (brake) {
       w *= Math.pow(0.90, k);
     }
     // Air drag resists wheel spin
     var t = tau - MOTOR.airDrag * w * Math.abs(w);
     Matter.Body.setAngularVelocity(wl, w + t * MOTOR.torqueScale * k);
   });
+}
+
+// Put the car back on its wheels at its current x (R key)
+function resetCar() {
+  if (!car) return;
+  var x = Math.max(START_X, car.chassis.position.x);
+  World.remove(world, car.all);
+  updateTerrain(x);
+  createCar(x);
 }
 
 // Convert a point stored relative to the chassis into world coordinates
