@@ -17,8 +17,7 @@ function setUpCanvas() {
 function handleResize() {
   W = window.innerWidth;
   H = window.innerHeight;
-  canvas.width = W;
-  canvas.height = H;
+  resizeRenderer();
   resizeWalls();
 }
 

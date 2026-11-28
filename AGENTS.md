@@ -14,19 +14,19 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | src/world.js             | Walls (rebuilt on resize), box spawn/remove, and the box counter                 |
 | src/particles.js         | Particle pool (`spawnParticle`, update, draw by layer); decoration, not physics |
 | src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust; tuning in `FX`             |
-| src/render.js            | Custom canvas renderer; bodies are drawn from their real vertices                |
+| src/render.js            | PixiJS (WebGL) renderer: mirrors bodies, particles and the car as Pixi objects   |
 | src/input.js             | Mouse, keyboard, and wheel handlers; canvas setup, resize, camera follow         |
 | src/main.js              | `init`, the substepped main loop, and the `load` bootstrap                       |
 | test/test-simulation.js  | Playwright smoke test; exits non-zero if any check fails                         |
 | package.json             | Dev dependency (`@playwright/test`) and the `check` / `test` scripts             |
 | AGENTS.md                | This contributor guide                                                           |
 
-There are no external assets and no build tools. Matter.js loads from a CDN; the app itself has no npm
+There are no external assets and no build tools. Matter.js and PixiJS load from a CDN; the app itself has no npm
 dependencies. `package.json` exists only for the test tooling.
 
 ## Running Locally
 
-Open `src/index.html` directly in a browser (double-click it) — no server is needed. Matter.js loads from CDN and
+Open `src/index.html` directly in a browser (double-click it) — no server is needed. Matter.js and PixiJS load from CDN and
 the plain `<script src>` tags work over `file://`.
 
 You can also serve the `src/` folder (e.g. `npx serve src`) or deploy it as-is to any static host such as
@@ -59,7 +59,7 @@ npx playwright install chromium
 npm test
 ```
 
-The test needs network access, because Matter.js loads from the CDN.
+The test needs network access, because Matter.js and PixiJS load from the CDN.
 
 ## Coding Style & Naming Conventions
 
@@ -89,9 +89,12 @@ When adding a new script, register it in `index.html` in the correct load order.
 The application follows a straightforward loop:
 
 1. **Matter.js Engine** — Handles physics simulation (gravity, collisions, walls).
-2. **Custom Canvas Renderer** — Draws everything to a `<canvas>` element each frame, in order: grid, walls, boxes,
+2. **PixiJS Renderer** (`src/render.js`, PixiJS 8 via WebGL) — Each body gets a Pixi display object whose shape
+   is built once in body-local coordinates; per frame only position and rotation are copied from Matter.js. The
+   world lives in one container whose position/scale are the pan offset and zoom. Pixi's own ticker is off: the main
+   loop calls `draw()`, which ends with `app.render()`. Layer order: grid (screen space), walls, boxes,
    `back` particles (smoke), car, `front` particles (dust, mud). Particles are updated once per frame with the
-   frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is intentionally bypassed to avoid rendering conflicts with CSS transforms used for zoom.
+   frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is not used.
 3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
 4. **Main Loop** — `requestAnimationFrame` drives the frame. Each frame advances physics (and the car motor) by
    the real elapsed time × `SIM_SPEED`, split into equal substeps of at most `MAX_STEP_MS`, so motion is smooth and
@@ -105,7 +108,7 @@ When working on this repository:
 
 - Application code lives in the `src/` scripts; keep `index.html` limited to markup, styles, and `<script>` tags, and keep each `src/` file focused on one concern.
 - Scripts share the global scope and load in tag order — do not convert them to ES modules, since that would break opening `src/index.html` directly from `file://`.
-- Avoid using Matter.js's built-in Render component — it conflicts with custom zoom/pan logic. Always use the custom canvas renderer instead.
+- Avoid using Matter.js's built-in Render component — it conflicts with custom zoom/pan logic. Always draw through `src/render.js` (PixiJS) instead.
 - Be careful with `mouseConstraint.render.visible` — this property does not exist; set `constraint.render.visible` on the create options instead.
 - The car is real Matter.js bodies (a chassis and two wheels joined by axle constraints), but it is drawn by the
   custom renderer in `src/render.js`, like everything else.

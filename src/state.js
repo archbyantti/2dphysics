@@ -2,7 +2,7 @@
 var { Engine, World, Bodies, Events } = Matter;
 
 // Canvas and engine refs
-var canvas, ctx, W, H;
+var canvas, W, H;
 var engine, world;
 
 // Dynamic objects

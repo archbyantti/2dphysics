@@ -1,11 +1,8 @@
 // Initialize the simulation
-function init() {
+async function init() {
   canvas = document.getElementById('canvas');
-  ctx = canvas.getContext('2d');
   W = window.innerWidth;
   H = window.innerHeight;
-  canvas.width = W;
-  canvas.height = H;
   countEl = document.getElementById('count');
   engine = Engine.create({
     enableSleeping: false,
@@ -17,6 +14,7 @@ function init() {
   createCar();
   setUpCollisionSound();
   setUpImpactDust();
+  await initRenderer();
   setUpCanvas();
   startLoop();
 }
@@ -37,6 +35,7 @@ function startLoop() {
         Engine.update(engine, h);
       }
       updateEffects(simMs);
+      removeLostBoxes();
     }
     last = now;
     updateEngineSound();

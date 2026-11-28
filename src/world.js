@@ -16,9 +16,38 @@ function addWalls() {
 function resizeWalls() {
   World.remove(world, walls);
   addWalls();
-  // Pull anything the new walls left outside back into the box
-  boxes.forEach(function (b) { pullInside([b]); });
+  // Pull anything the new walls left outside back into the box (the car first, it is biggest)
   if (car) pullInside([car.chassis].concat(car.wheels));
+  boxes.forEach(function (b) { pullInside([b]); });
+}
+
+// Every body except those in `group`
+function otherBodies(group) {
+  var all = walls.concat(boxes, car ? [car.chassis].concat(car.wheels) : []);
+  return all.filter(function (b) { return group.indexOf(b) < 0; });
+}
+
+// Lift a group straight up until it overlaps nothing. A body teleported into another one would
+// otherwise be pushed out by the solver, possibly down through the ground.
+function liftClear(bodies) {
+  var others = otherBodies(bodies);
+  for (var i = 0; i < 60; i++) {
+    var hit = bodies.some(function (b) { return Matter.Query.collides(b, others).length > 0; });
+    if (!hit) return;
+    bodies.forEach(function (b) { Matter.Body.translate(b, { x: 0, y: -10 }); });
+  }
+}
+
+// Remove boxes that somehow left the world (fell below the ground)
+function removeLostBoxes() {
+  var before = boxes.length;
+  for (var i = boxes.length - 1; i >= 0; i--) {
+    if (boxes[i].position.y > H + 1000) {
+      World.remove(world, boxes[i]);
+      boxes.splice(i, 1);
+    }
+  }
+  if (boxes.length !== before) updateCount();
 }
 
 // Move a group of bodies together so their combined bounds fit inside 0..W, ..H
@@ -38,6 +67,7 @@ function pullInside(bodies) {
     Matter.Body.translate(b, { x: dx, y: dy });
     Matter.Body.setVelocity(b, { x: 0, y: 0 });
   });
+  liftClear(bodies);
 }
 
 // Remove the topmost box under a screen position (Shift+click)

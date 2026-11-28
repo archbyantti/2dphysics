@@ -53,12 +53,15 @@ function check(name, ok, detail) {
     return worldToScreen(cab.position.x, cab.bounds.min.y - 80);
   });
   await page.mouse.click(drop.x, drop.y);
-  await page.waitForTimeout(1000);
-  const onRoof = await page.evaluate(() => {
+  // Shapes are random and may slide off afterwards, so check that the box touched down on the
+  // roof (came to the roof line above the cabin) instead of falling through it.
+  const onRoof = await page.waitForFunction(() => {
     var b = boxes[boxes.length - 1], cab = car.chassis.parts[2];
-    return b.bounds.max.y <= cab.bounds.min.y + 5 && b.position.x > cab.bounds.min.x && b.position.x < cab.bounds.max.x;
-  });
+    return Math.abs(b.bounds.max.y - cab.bounds.min.y) < 6 &&
+      b.position.x > cab.bounds.min.x && b.position.x < cab.bounds.max.x;
+  }, null, { timeout: 1500, polling: 'raf' }).then(() => true, () => false);
   check('box lands on the cabin roof', onRoof);
+  await page.waitForTimeout(500);
 
   // Shift+click on a resting box removes it.
   const before = await page.evaluate(() => boxes.length);
@@ -108,11 +111,12 @@ function check(name, ok, detail) {
   await page.keyboard.up('ArrowUp');
   await page.setViewportSize({ width: 700, height: 500 });
   await page.waitForTimeout(1000);
-  const inside = await page.evaluate(() => {
+  const outside = await page.evaluate(() => {
     var ok = function (b) { return b.position.x > 0 && b.position.x < W && b.position.y < H; };
-    return ok(car.chassis) && boxes.every(ok);
+    return [car.chassis].concat(boxes).filter((b) => !ok(b))
+      .map((b) => (b === car.chassis ? 'car' : 'box') + '@' + Math.round(b.position.x) + ',' + Math.round(b.position.y));
   });
-  check('bodies stay inside after shrinking', inside);
+  check('bodies stay inside after shrinking', outside.length === 0, outside.join(' ') || undefined);
 
   check('no console errors', errors.length === 0, errors.join(' | ') || undefined);
 

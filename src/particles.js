@@ -1,32 +1,10 @@
-// Lightweight particle system for visual effects (smoke, dust, mud).
-// Particles are decoration only: they live in world coordinates and never touch the physics.
+// Lightweight particle system for visual effects (smoke, dust, mud): spawning and motion only.
+// Particles are decoration: they live in world coordinates and never touch the physics.
+// render.js draws them (soft sprites for `soft` particles, solid squares otherwise).
 // Velocities are in px/s, gravity in px/s^2, drag is a per-second damping rate, times in ms.
 
 var MAX_PARTICLES = 800;
 var particles = [];
-var spriteCache = {};
-
-// Convert '#rrggbb' to an 'rgba(r,g,b,a)' string
-function hexToRgba(hex, a) {
-  var n = parseInt(hex.slice(1), 16);
-  return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
-}
-
-// Soft round sprite of one color, rendered once so each particle is a cheap drawImage
-function softSprite(color) {
-  if (spriteCache[color]) return spriteCache[color];
-  var c = document.createElement('canvas');
-  c.width = c.height = 64;
-  var g = c.getContext('2d');
-  var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0, hexToRgba(color, 1));
-  grad.addColorStop(0.4, hexToRgba(color, 0.6));
-  grad.addColorStop(1, hexToRgba(color, 0));
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  spriteCache[color] = c;
-  return c;
-}
 
 // Add one particle; unspecified fields get defaults. The oldest particle is dropped at the cap.
 function spawnParticle(o) {
@@ -69,26 +47,4 @@ function updateParticles(ms) {
     particles[keep++] = p;
   }
   particles.length = keep;
-}
-
-// Draw the particles of one layer ('back' = behind the car, 'front' = in front of it)
-function drawParticles(layer) {
-  for (var i = 0; i < particles.length; i++) {
-    var p = particles[i];
-    if (p.layer !== layer) continue;
-    var t = p.age / p.life;
-    // Fade in over the first 60 ms, fade out over the whole life
-    var a = p.alpha * (1 - t) * Math.min(1, p.age / 60);
-    if (a <= 0.01) continue;
-    var pos = worldToScreen(p.x, p.y);
-    var r = Math.max(0.5, p.size * zoom);
-    ctx.globalAlpha = a;
-    if (p.soft) {
-      ctx.drawImage(softSprite(p.color), pos.x - r, pos.y - r, r * 2, r * 2);
-    } else {
-      ctx.fillStyle = p.color;
-      ctx.fillRect(pos.x - r, pos.y - r, r * 2, r * 2);
-    }
-  }
-  ctx.globalAlpha = 1;
 }
