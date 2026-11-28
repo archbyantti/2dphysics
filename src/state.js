@@ -17,11 +17,11 @@ var countEl = null;  // DOM element for box counter
 
 // Motor configuration for the car
 var MOTOR = {
-    wheelTorque: 3.84,   // Forward acceleration torque
-    revTorque: 1.28,     // Reverse torque when pressing down arrow
-    topSpeed: 12,        // Maximum forward speed
-    maxRevSpeed: 5,      // Maximum reverse speed
-    airDrag: 0.0006      // Air resistance coefficient
+  wheelTorque: 3.84,   // Forward acceleration torque
+  revTorque: 1.28,     // Reverse torque when pressing down arrow
+  topSpeed: 12,        // Maximum forward speed
+  maxRevSpeed: 5,      // Maximum reverse speed
+  airDrag: 0.0006      // Air resistance coefficient
 };
 
 // Car input state
