@@ -2,27 +2,33 @@
 
 ## Project Structure & Module Organization
 
-This is a 2D physics simulation built with [Matter.js](https://github.com/liabru/matter-js/). The application is split across a small set of plain (non-module) scripts under `src/`, loaded in order by `index.html`. All scripts share the global scope — there are no imports and no bundling.
+This is a 2D physics simulation built with [Matter.js](https://github.com/liabru/matter-js/). The application is split across a small set of plain (non-module) scripts under `src/`, loaded in order by `src/index.html`. All scripts share the global scope — there are no imports and no bundling.
 
-| File          | Purpose                                                                              |
-| ------------- | ------------------------------------------------------------------------------------ |
-| index.html    | Page layout, CSS styles, and the ordered `<script>` tags; no application logic       |
-| src/state.js  | Global state and configuration (canvas/world refs, `MOTOR`, `input`)                |
-| src/util.js   | Pure helpers: `screenToWorld`, `worldToScreen`, `bodyBounds`                         |
-| src/car.js    | Car creation and the torque-based motor model                                        |
-| src/world.js  | Walls, box spawn/remove, and the box counter                                         |
-| src/render.js | Custom canvas renderer (grid, walls, boxes, car)                                     |
-| src/input.js  | Mouse, keyboard, and wheel handlers; canvas setup and resize                         |
-| src/main.js   | `init`, the main loop, and the `load` bootstrap                                      |
-| AGENTS.md     | This contributor guide                                                               |
+| File                     | Purpose                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| src/index.html           | Page layout, CSS styles, and the ordered `<script>` tags; no application logic   |
+| src/state.js             | Global state and config (world refs, `CAT` collision bits, `STEP_MS`, `MOTOR`)   |
+| src/util.js              | Pure helpers: `screenToWorld`, `worldToScreen`                                   |
+| src/sound.js             | Web Audio engine sound and collision sounds (`setUpCollisionSound`)              |
+| src/car.js               | Car creation (chassis, wheels, axle constraints) and the torque-based motor     |
+| src/world.js             | Walls (rebuilt on resize), box spawn/remove, and the box counter                 |
+| src/render.js            | Custom canvas renderer; bodies are drawn from their real vertices                |
+| src/input.js             | Mouse, keyboard, and wheel handlers; canvas setup, resize, camera follow         |
+| src/main.js              | `init`, the fixed-timestep main loop, and the `load` bootstrap                   |
+| test/test-simulation.js  | Playwright smoke test; exits non-zero if any check fails                         |
+| package.json             | Dev dependency (`@playwright/test`) and the `check` / `test` scripts             |
+| AGENTS.md                | This contributor guide                                                           |
 
-There are no external assets, build tools, or test directories. Matter.js loads from a CDN.
+There are no external assets and no build tools. Matter.js loads from a CDN; the app itself has no npm
+dependencies. `package.json` exists only for the test tooling.
 
 ## Running Locally
 
-Open `index.html` directly in a browser (double-click it from the repo root) — no server is needed. Matter.js loads from CDN and the plain `<script src>` tags work over `file://`.
+Open `src/index.html` directly in a browser (double-click it) — no server is needed. Matter.js loads from CDN and
+the plain `<script src>` tags work over `file://`.
 
-You can also serve the folder (e.g. `npx serve`) or deploy it as-is to any static host such as Cloudflare Pages (framework preset: none, output directory: repo root).
+You can also serve the `src/` folder (e.g. `npx serve src`) or deploy it as-is to any static host such as
+Cloudflare Pages (framework preset: none, output directory: `src`).
 
 ## Building & Testing
 
@@ -31,56 +37,27 @@ There is no build step. To test changes:
 1. Edit the relevant file under `src/`.
 2. Refresh the browser tab (Ctrl+R) to see updates instantly.
 
-For quick syntax checks, run each script through Node before opening a browser:
-
-```
-Get-ChildItem src\*.js | ForEach-Object { node --check $_.FullName }
-```
-
-or on Unix-like shells:
-
-```
-for f in src/*.js; do node --check "$f"; done
-```
+For a quick syntax check of every script, run `npm run check` (it runs `node --check` on each `src/*.js`).
 
 ## Simulation Testing
 
-The simulation can be launched directly by opening `src/index.html` in a browser — no server is required. When making changes to the codebase, you can:
-
-1. **Launch the simulation** by opening `src/index.html` in a browser
-2. **Check for console errors** by opening the browser's developer tools (F12) and monitoring the Console tab
-3. **Verify visual output** and interaction behavior before committing changes
-
-This workflow allows for quick iteration and bug detection during development.
+Before committing, open `src/index.html` in a browser, check the developer tools Console (F12) for errors, and
+verify the visual output and interactions.
 
 ## Automated Testing with Playwright
 
-To automate simulation testing, create a test script (e.g., `test-simulation.js`):
+`test/test-simulation.js` opens `src/index.html` (path resolved relative to the script) and checks: box spawning
+and the counter, collision sounds firing, Shift+click removal, driving with the up arrow, the C-key status text,
+walls following a viewport resize, and no console errors. It saves `test/screenshots/simulation-test.png` and
+exits with code 1 if any check fails. Add a check here when you add a feature.
 
-```javascript
-const { chromium } = require('playwright');
-
-(async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  await page.goto('file:///E:/dev/physics/src/index.html');
-  
-  // Test box creation
-  for (let i = 0; i < 5; i++) {
-    await page.click('canvas');
-  }
-  
-  await page.screenshot({ path: 'debug.png' });
-  await browser.close();
-})();
+```
+npm install
+npx playwright install chromium
+npm test
 ```
 
-Run with: `node test-simulation.js`
-
-This approach automates:
-- Box spawning (click on canvas)
-- Console error checking
-- Visual validation via screenshots
+The test needs network access, because Matter.js loads from the CDN.
 
 ## Coding Style & Naming Conventions
 
@@ -112,14 +89,17 @@ The application follows a straightforward loop:
 1. **Matter.js Engine** — Handles physics simulation (gravity, collisions, walls).
 2. **Custom Canvas Renderer** — Draws everything to a `<canvas>` element each frame (grid, walls, boxes, car). Matter.js's built-in renderer is intentionally bypassed to avoid rendering conflicts with CSS transforms used for zoom.
 3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
-4. **Main Loop** — `requestAnimationFrame` drives physics updates, input handling, and canvas drawing in sync.
+4. **Main Loop** — `requestAnimationFrame` drives the frame; physics (and the car motor) advance in fixed
+   `STEP_MS` steps via an accumulator, so the simulation speed does not depend on the display refresh rate. Sound,
+   camera, and drawing update once per frame.
 
 ## Agent-Specific Instructions
 
 When working on this repository:
 
 - Application code lives in the `src/` scripts; keep `index.html` limited to markup, styles, and `<script>` tags, and keep each `src/` file focused on one concern.
-- Scripts share the global scope and load in tag order — do not convert them to ES modules, since that would break opening `index.html` directly from `file://`.
+- Scripts share the global scope and load in tag order — do not convert them to ES modules, since that would break opening `src/index.html` directly from `file://`.
 - Avoid using Matter.js's built-in Render component — it conflicts with custom zoom/pan logic. Always use the custom canvas renderer instead.
 - Be careful with `mouseConstraint.render.visible` — this property does not exist; set `constraint.render.visible` on the create options instead.
-- The auto-painted car and its wheels are drawn in world coordinates each frame, not as Matter.js bodies.
+- The car is real Matter.js bodies (a chassis and two wheels joined by axle constraints), but it is drawn by the
+  custom renderer in `src/render.js`, like everything else.

@@ -10,39 +10,29 @@ function createCar() {
   var wheelAOffset = -width * 0.5 + wheelBase;
   var wheelBOffset = width * 0.5 - wheelBase;
 
-  // Create car composite group for collision isolation
+  // Negative group: car parts never collide with each other
   var group = Matter.Body.nextGroup(true);
+  var filter = function () {
+    return { group: group, category: CAT.car, mask: CAT.box | CAT.wall };
+  };
 
-  // Create chassis with rounded corners (chamfer)
-  // Position above wheels so wheels are underneath
-  var chassis = Matter.Bodies.rectangle(cx, cy, width, height, {
-    collisionFilter: { group: group },
+  // Chassis with rounded corners (chamfer)
+  var chassis = Bodies.rectangle(cx, cy, width, height, {
+    collisionFilter: filter(),
     chamfer: { radius: height * 0.5 },
     density: 0.0002,
     friction: 0.1
   });
-  chassis.collisionFilter.category = 1;
-  chassis.collisionFilter.mask = 2 | 4;
 
-  // Position wheels below chassis
-  var wheelY = cy + wheelSize;  // wheels wheelSize below chassis center
-  var wheelA = Matter.Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, {
-    collisionFilter: { group: group },
-    friction: 0.9,
-    density: 0.004
-  });
-  var wheelB = Matter.Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, {
-    collisionFilter: { group: group },
-    friction: 0.9,
-    density: 0.004
-  });
+  // Wheels sit below the chassis center
+  var wheelY = cy + wheelSize;
+  var wheelOpts = function () {
+    return { collisionFilter: filter(), friction: 0.9, density: 0.004 };
+  };
+  var wheelA = Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, wheelOpts());
+  var wheelB = Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, wheelOpts());
 
-  wheelA.collisionFilter.category = 1;
-  wheelB.collisionFilter.category = 1;
-  wheelA.collisionFilter.mask = 2 | 4;
-  wheelB.collisionFilter.mask = 2 | 4;
-
-  // Create axles (constraints) - attach to chassis at wheel positions
+  // Axles (constraints) attach each wheel to the chassis
   var axleA = Matter.Constraint.create({
     bodyB: chassis,
     pointB: { x: wheelAOffset, y: wheelSize },
@@ -50,7 +40,6 @@ function createCar() {
     stiffness: 1,
     length: 0
   });
-
   var axleB = Matter.Constraint.create({
     bodyB: chassis,
     pointB: { x: wheelBOffset, y: wheelSize },
@@ -59,26 +48,18 @@ function createCar() {
     length: 0
   });
 
-  // Add car parts to world
   World.add(world, [chassis, wheelA, wheelB, axleA, axleB]);
 
   car = {
-    x: cx,
-    y: cy,
-    width: width,
-    height: height,
     color: '#e74c3c',
-    visible: true,
     chassis: chassis,
     wheels: [wheelA, wheelB],
-    joints: [axleA, axleB],
     wheelR: wheelSize,
-    axOffset: wheelBase,
     speed: 0
   };
 }
 
-// Update car motor physics each frame
+// Update car motor physics; call once per physics step
 function updateCarMotor() {
   if (!car) return;
   var fwd = carForward();
@@ -87,27 +68,24 @@ function updateCarMotor() {
   car.speed = speed;
   var tau;
   if (input.accel) {
-    // Torque decreases as speed increases (engine braking effect)
+    // Torque fades out as forward speed approaches the top speed
     tau = MOTOR.wheelTorque * Math.max(0, 1 - Math.abs(speed) / MOTOR.topSpeed);
     // Ensure forward motion on start
     if (speed < 0.05) tau += 0.00001;
   } else if (input.rev) {
-    // Reverse torque when pressing down arrow
-    tau = -MOTOR.revTorque;
+    // Reverse torque fades out as reverse speed approaches its limit
+    tau = -MOTOR.revTorque * Math.max(0, 1 - Math.max(0, -speed) / MOTOR.maxRevSpeed);
   } else {
     tau = 0;
   }
-  var delta = 0.01;  // Time step adjustment for stable physics
-  car.wheels.forEach(function(wl) {
-    wl.torque = (wl.torque || 0) + tau;
+  car.wheels.forEach(function (wl) {
     // Apply brake when space is pressed
     if (input.brake) {
       Matter.Body.setAngularVelocity(wl, wl.angularVelocity * 0.90);
     }
-    // Apply air drag resistance
-    wl.torque -= MOTOR.airDrag * wl.angularVelocity * Math.abs(wl.angularVelocity);
-    Matter.Body.setAngularVelocity(wl, wl.angularVelocity + wl.torque * delta);
-    wl.torque = 0;  // Reset for next frame
+    // Air drag resists wheel spin
+    var t = tau - MOTOR.airDrag * wl.angularVelocity * Math.abs(wl.angularVelocity);
+    Matter.Body.setAngularVelocity(wl, wl.angularVelocity + t * MOTOR.torqueScale);
   });
 }
 

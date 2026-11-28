@@ -3,8 +3,5 @@ node_modules/
 
 # Test results (not test source files)
 test-results/
-
-
-
-# Lock files (optional, depending on preference)
-package-lock.json
+# Test screenshots
+test/screenshots/

@@ -15,21 +15,32 @@ function init() {
   world = engine.world;
   addWalls();
   createCar();
+  setUpCollisionSound();
   setUpCanvas();
   startLoop();
 }
 
-// Start the main game loop
+// Start the main loop: physics runs in fixed steps, independent of the display refresh rate
 function startLoop() {
-  function loop() {
-    updateCarMotor();
+  var acc = 0;
+  var last = null;
+  function loop(now) {
+    if (last !== null) {
+      // Cap the catch-up after a stalled or hidden tab
+      acc += Math.min(now - last, 250);
+    }
+    last = now;
+    while (acc >= STEP_MS) {
+      updateCarMotor();
+      Engine.update(engine, STEP_MS);
+      acc -= STEP_MS;
+    }
     updateEngineSound();
-    Engine.update(engine, 1000 / 60);
     updateCameraPosition();
     draw();
     requestAnimationFrame(loop);
   }
-  loop();
+  requestAnimationFrame(loop);
 }
 
 // Start when page is loaded

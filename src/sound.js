@@ -44,7 +44,7 @@ function updateEngineSound() {
   if (!car || !engineOscillator) return;
 
   var speed = Math.abs(car.speed);
-  var maxSpeed = 10;
+  var maxSpeed = MOTOR.topSpeed;
   var inputActive = input.accel || input.rev;
   
   // Calculate engine pitch (idle at 50 Hz, up to 400 Hz at max speed)
@@ -64,6 +64,27 @@ function updateEngineSound() {
   // Open filter slightly more at higher speeds for more "revving" sound
   var filterFreq = 150 + speed / maxSpeed * 100;
   engineFilter.frequency.setTargetAtTime(filterFreq, audioCtx.currentTime, 0.1);
+}
+
+// Minimum impact speed and spacing between collision sounds
+var COLLISION_MIN_SPEED = 2;
+var COLLISION_MIN_GAP = 0.06;  // Seconds
+var lastCollisionAt = 0;
+
+// Play a collision sound for hard enough new contacts; call once after the engine exists
+function setUpCollisionSound() {
+  Events.on(engine, 'collisionStart', function (e) {
+    if (!audioCtx || audioCtx.currentTime - lastCollisionAt < COLLISION_MIN_GAP) return;
+    for (var i = 0; i < e.pairs.length; i++) {
+      var a = e.pairs[i].bodyA, b = e.pairs[i].bodyB;
+      var dvx = a.velocity.x - b.velocity.x, dvy = a.velocity.y - b.velocity.y;
+      if (Math.sqrt(dvx * dvx + dvy * dvy) >= COLLISION_MIN_SPEED) {
+        lastCollisionAt = audioCtx.currentTime;
+        playCollisionSound();
+        return;
+      }
+    }
+  });
 }
 
 // Play collision sound

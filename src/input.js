@@ -1,3 +1,7 @@
+// Help text shown in the info panel
+var HELP_TEXT = 'Left mouse: create box | Shift+click: remove box | Drag center: pan view | ' +
+  'Ctrl+scroll: zoom | C: toggle car centering | Space: brake';
+
 // Set up canvas event listeners
 function setUpCanvas() {
   window.addEventListener('resize', handleResize);
@@ -15,6 +19,7 @@ function handleResize() {
   H = window.innerHeight;
   canvas.width = W;
   canvas.height = H;
+  resizeWalls();
 }
 
 // Handle mouse press
@@ -74,9 +79,8 @@ function handleKeyUp(e) {
 // Toggle car centering on/off
 function toggleCarCentering() {
   centerCar = !centerCar;
-  var info = document.getElementById('info');
   var status = centerCar ? ' (centering ON)' : ' (centering OFF)';
-  info.textContent = 'Left mouse: create box | Shift+click: remove box | Drag center: pan view | Ctrl+scroll: zoom | C: toggle car centering | Space: brake';
+  document.getElementById('info').textContent = HELP_TEXT + status;
 }
 
 // Handle mouse wheel for zoom (Ctrl or Cmd + scroll)

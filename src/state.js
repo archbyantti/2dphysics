@@ -1,5 +1,5 @@
 // Matter.js imports
-var { Engine, World, Bodies, Body, Constraint } = Matter;
+var { Engine, World, Bodies, Events } = Matter;
 
 // Canvas and engine refs
 var canvas, ctx, W, H;
@@ -15,13 +15,24 @@ var zoom = 1.0;      // Camera zoom level
 var car = null;      // Car object (null when not created)
 var countEl = null;  // DOM element for box counter
 
+// Collision filter categories (bit flags)
+var CAT = {
+  car: 1,
+  box: 2,
+  wall: 4
+};
+
+// Fixed physics time step in milliseconds
+var STEP_MS = 1000 / 60;
+
 // Motor configuration for the car
 var MOTOR = {
   wheelTorque: 3.84,   // Forward acceleration torque
   revTorque: 1.28,     // Reverse torque when pressing down arrow
   topSpeed: 12,        // Maximum forward speed
   maxRevSpeed: 5,      // Maximum reverse speed
-  airDrag: 0.0006      // Air resistance coefficient
+  airDrag: 0.0006,     // Air resistance coefficient
+  torqueScale: 0.01    // Converts torque into angular velocity change per step
 };
 
 // Car input state

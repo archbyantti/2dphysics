@@ -1,0 +1,12 @@
+{
+  "name": "physics",
+  "private": true,
+  "description": "2D physics sandbox built with Matter.js",
+  "scripts": {
+    "check": "node -e \"for (const f of require('fs').readdirSync('src').filter(f => f.endsWith('.js'))) require('child_process').execFileSync(process.execPath, ['--check', 'src/' + f], { stdio: 'inherit' })\"",
+    "test": "node test/test-simulation.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
+  }
+}

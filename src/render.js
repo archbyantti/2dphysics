@@ -19,53 +19,45 @@ function drawGrid() {
   }
 }
 
-// Draw a box body
+// Trace a body's outline (its real vertices) as a screen-space path
+function traceBody(b) {
+  var v = b.vertices;
+  ctx.beginPath();
+  var p = worldToScreen(v[0].x, v[0].y);
+  ctx.moveTo(p.x, p.y);
+  for (var i = 1; i < v.length; i++) {
+    p = worldToScreen(v[i].x, v[i].y);
+    ctx.lineTo(p.x, p.y);
+  }
+  ctx.closePath();
+}
+
+// Draw a box body (rectangle or polygon)
 function drawBox(b) {
-  var pos = worldToScreen(b.position.x, b.position.y);
-  var color = b.renderColor || '#aaa';
-  var w = b._originalWidth, h = b._originalHeight;
-  if (w === undefined || h === undefined) {
-    var bounds = bodyBounds(b);
-    w = bounds.w;
-    h = bounds.h;
-    b._originalWidth = w;
-    b._originalHeight = h;
-  }
-  var scaledW = w * zoom, scaledH = h * zoom;
-  ctx.save();
-  ctx.translate(pos.x, pos.y);
-  ctx.rotate(b.angle);
-  ctx.fillStyle = color;
-  ctx.fillRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
+  traceBody(b);
+  ctx.fillStyle = b.renderColor || '#aaa';
+  ctx.fill();
+  // Subtle top-to-bottom highlight
+  var top = b.bounds.min.y * zoom + panOffset.y;
+  var bottom = b.bounds.max.y * zoom + panOffset.y;
+  var grad = ctx.createLinearGradient(0, top, 0, bottom);
+  grad.addColorStop(0, 'rgba(255,255,255,0.1)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-  ctx.lineWidth = 1.5 / zoom;
-  ctx.strokeRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
-  // Add gradient shading
-  if (scaledH > 0 && !isNaN(scaledH) && !isFinite(scaledH) === false) {
-    var grad = ctx.createLinearGradient(0, -scaledH / 2, 0, scaledH / 2);
-    grad.addColorStop(0, 'rgba(255,255,255,0.1)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(-scaledW / 2, -scaledH / 2, scaledW, scaledH);
-  }
-  ctx.restore();
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 }
 
 // Draw a wall
 function drawWall(b) {
-  var pos = worldToScreen(b.position.x, b.position.y);
-  var w = b.bounds.max.x - b.bounds.min.x;
-  var h = b.bounds.max.y - b.bounds.min.y;
-  var sw = w * zoom, sh = h * zoom;
-  ctx.save();
-  ctx.translate(pos.x, pos.y);
-  ctx.rotate(b.angle);
+  traceBody(b);
   ctx.fillStyle = b.renderColor || '#3a4358';
-  ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = 2 / zoom;
-  ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
-  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 // Draw all walls
@@ -87,7 +79,7 @@ function drawWheel(wl) {
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = Math.max(1.5 / zoom, 1);
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   // Draw spoke lines
   ctx.strokeStyle = '#aaa';
@@ -107,24 +99,19 @@ function drawWheel(wl) {
   ctx.restore();
 }
 
-// Draw the car (chassis + wheels)
+// Draw the car (rounded chassis + wheels)
 function drawCar() {
   if (!car) return;
-  var pos = worldToScreen(car.chassis.position.x, car.chassis.position.y);
-  var angle = car.chassis.angle;
-  ctx.save();
-  ctx.translate(pos.x, pos.y);
-  ctx.rotate(angle);
+  traceBody(car.chassis);
   ctx.fillStyle = car.color;
-  ctx.fillRect(-car.width * zoom / 2, -car.height * zoom / 2, car.width * zoom, car.height * zoom);
+  ctx.fill();
   ctx.strokeStyle = '#222';
-  ctx.lineWidth = 2 / zoom;
-  ctx.strokeRect(-car.width * zoom / 2, -car.height * zoom / 2, car.width * zoom, car.height * zoom);
-  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.stroke();
   car.wheels.forEach(drawWheel);
 }
 
-// Main render loop
+// Draw one frame
 function draw() {
   if (!isFinite(zoom) || zoom <= 0) return;
   ctx.fillStyle = '#1a1a2e';
@@ -135,5 +122,4 @@ function draw() {
     drawBox(boxes[i]);
   }
   drawCar();
-  updateCameraPosition();
 }
