@@ -3,7 +3,6 @@ async function init() {
   canvas = document.getElementById('canvas');
   W = window.innerWidth;
   H = window.innerHeight;
-  countEl = document.getElementById('count');
   engine = Engine.create({
     enableSleeping: false,
     gravity: { y: 1.5, x: 0 },
@@ -16,6 +15,7 @@ async function init() {
   setUpCollisionSound();
   setUpImpactDust();
   await initRenderer();
+  zoom = defaultZoom();
   updateCameraPosition(0);
   setUpCanvas();
   startLoop();

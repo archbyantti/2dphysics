@@ -12,12 +12,12 @@ This is a 2D physics simulation built with [Matter.js](https://github.com/liabru
 | src/sound.js             | Procedural Web Audio: engine voice driven by `car.engine`, box knock, landing thump |
 | src/car.js               | Car creation, engine + automatic 4+R gearbox (`car.engine`), and `resetCar` (R) |
 | src/terrain.js           | Endless ground: hills and jumps (every 100 m) grow with distance; ponds; `jumpSpec`, streaming |
-| src/world.js             | Start wall, box spawn/remove, lost-box cleanup, box counter, distance/gear HUD   |
+| src/world.js             | Start wall, boxes (`addBox`, from code only), lost-box cleanup, distance/gear HUD |
 | src/water.js             | Pond water physics: buoyancy and drag per substep (`applyWater`), `WATER` tuning |
 | src/particles.js         | Particle pool (`spawnParticle`, update, draw by layer); decoration, not physics |
 | src/effects.js           | Emitters: exhaust smoke, tyre dust/mud, impact dust, water splashes/spray; `FX` |
 | src/render.js            | PixiJS (WebGL) renderer: mirrors bodies, particles and the car as Pixi objects   |
-| src/input.js             | Mouse, keyboard, and wheel handlers; resize; smooth look-ahead camera follow    |
+| src/input.js             | Pointer (mouse/touch, pinch zoom), keyboard, wheel; touch pedals; camera follow |
 | src/main.js              | `init`, the substepped main loop, and the `load` bootstrap                       |
 | test/test-simulation.js  | Playwright smoke test; exits non-zero if any check fails                         |
 | package.json             | Dev dependency (`@playwright/test`) and the `check` / `test` scripts             |
@@ -51,12 +51,12 @@ verify the visual output and interactions.
 ## Automated Testing with Playwright
 
 `test/test-simulation.js` opens `src/index.html` (path resolved relative to the script) and checks: the car
-resting on the terrain, box spawning and the counter, box knocks, the cabin roof, engine revs, upshifts and the
-gear HUD, Shift+click removal,
+resting on the terrain, that a click drops no box and there is no box counter, box knocks, the cabin roof
+(boxes added from code), engine revs, upshifts and the gear HUD,
 effects while driving, the distance HUD, braking into reverse, the C-key status text, terrain streaming 600 m out, silence while
 rolling, a thump when the car is dropped, a jump ramp launching the car (and the landing thump), ponds every 300 m
 (splash, a car half under water on the bottom, a floating box, driving out), the R reset, the
-renderer following a viewport resize, and no console errors. It saves `test/screenshots/simulation-test.png` and
+renderer following a viewport resize, the phone layout (touch pedals drive and reverse, a tap drops no box), and no console errors. It saves `test/screenshots/simulation-test.png` and
 exits with code 1 if any check fails. Add a check here when you add a feature.
 
 ```
@@ -120,7 +120,11 @@ The application follows a straightforward loop:
    `back` particles (smoke), car, pond water (translucent, so the car looks submerged), `front` particles
    (dust, mud, water drops). Particles are updated once per frame with the
    frame's simulation time (`updateEffects`) and never interact with the physics. Matter.js's built-in renderer is not used.
-3. **Input Layer** — Keyboard (Arrow keys for the car), mouse (click to spawn, drag to pan, Ctrl+scroll to zoom).
+3. **Input Layer** — Keyboard (Arrow keys for the car) and pointer events, so mouse and touch share one path
+   (drag to pan, Ctrl+scroll or pinch to zoom). The player cannot drop boxes; `addBox` is for tests and the console. On touch screens (`pointer: coarse`, or
+   `?touch=1`) `body.touch` shows GAS / BRAKE pedals (same as Up / Down) and a reset button instead of the
+   keyboard help; small screens start zoomed out (`defaultZoom`). The page is the public game, so keep it playable
+   on phones.
 4. **Main Loop** — `requestAnimationFrame` drives the frame. Each frame advances physics (and the car motor) by
    the real elapsed time × `SIM_SPEED`, split into equal substeps of at most `MAX_STEP_MS`, so motion is smooth and
    equally fast on any refresh rate. Code that runs per substep must scale per-step effects by the step length

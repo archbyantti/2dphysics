@@ -13,7 +13,6 @@ var lastMp = { x: 0, y: 0 };  // Last mouse position for panning
 var panOffset = { x: 0, y: 0 };  // Camera offset for panning
 var zoom = 0.8;      // Camera zoom level
 var car = null;      // Car object (null when not created)
-var countEl = null;  // DOM element for box counter
 
 // Collision filter categories (bit flags)
 var CAT = {

@@ -2,24 +2,45 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Physics Simulation</title>
 <style>
-body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
-canvas { display: block; cursor: crosshair; }
+html, body { touch-action: none; overscroll-behavior: none; }
+body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+canvas { display: block; cursor: crosshair; touch-action: none; }
 #info { position: absolute; top: 10px; left: 10px; color: #ccc; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px; pointer-events: none; font-size: 13px; line-height: 1.6; }
-#dist { position: absolute; top: 52px; right: 10px; color: #fff; background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 6px; pointer-events: none; font-size: 22px; font-weight: bold; }
-#gear { position: absolute; top: 100px; right: 10px; color: #ffd54a; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 6px; pointer-events: none; font-size: 18px; font-weight: bold; min-width: 22px; text-align: center; }
-#count { position: absolute; top: 10px; right: 10px; color: #0f0; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px; pointer-events: none; font-size: 14px; }
+#dist { position: absolute; top: 10px; right: 10px; color: #fff; background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 6px; pointer-events: none; font-size: 22px; font-weight: bold; }
+#gear { position: absolute; top: 58px; right: 10px; color: #ffd54a; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 6px; pointer-events: none; font-size: 18px; font-weight: bold; min-width: 22px; text-align: center; }
+/* Touch controls: shown only on touch screens (body.touch, set by input.js) */
+#touch { display: none; }
+body.touch #touch { display: block; }
+body.touch #info { display: none; }
+.pedal { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom)); width: 112px; height: 112px; border-radius: 22px; border: 2px solid rgba(255,255,255,0.35); color: #fff; font: bold 17px Arial, sans-serif; touch-action: none; opacity: 0.8; }
+.pedal span { display: block; font-size: 30px; line-height: 1.1; }
+#btnBrake { left: calc(18px + env(safe-area-inset-left)); background: rgba(190,50,50,0.45); }
+#btnGas { right: calc(18px + env(safe-area-inset-right)); background: rgba(50,160,70,0.45); }
+.pedal.down { opacity: 1; transform: scale(0.94); border-color: #fff; }
+#btnBrake.down { background: rgba(220,60,60,0.75); }
+#btnGas.down { background: rgba(60,190,80,0.75); }
+#btnReset { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: calc(10px + env(safe-area-inset-left)); width: 48px; height: 48px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.5); color: #fff; font-size: 24px; touch-action: none; }
+#dist { top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); }
+#gear { top: calc(58px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.22.0/pixi.min.js"></script>
 </head>
 <body>
 <canvas id="canvas" tabindex="0"></canvas>
-<div id="info">Arrows: drive | Space: brake | R: reset car | Left mouse: create box | Shift+click: remove box | Drag: pan view | Ctrl+scroll: zoom | C: toggle car centering</div>
-<div id="count">Boxes: 0</div>
+<div id="info">Arrows: drive | Space: brake | R: reset car | Drag: pan view | Ctrl+scroll: zoom | C: toggle car centering</div>
 <div id="dist">0 m</div>
 <div id="gear">1</div>
+<div id="touch">
+  <button id="btnBrake" class="pedal" aria-label="Brake / reverse"><span>&#9664;</span>BRAKE</button>
+  <button id="btnGas" class="pedal" aria-label="Gas"><span>&#9654;</span>GAS</button>
+  <button id="btnReset" aria-label="Reset car">&#8634;</button>
+</div>
 <script src="state.js"></script>
 <script src="util.js"></script>
 <script src="sound.js"></script>

@@ -51,13 +51,19 @@ function check(name, ok, detail) {
   });
   const soundCount = (kind) => page.evaluate((k) => window.__sounds.filter((s) => s === k).length, kind);
 
-  // Spawn five boxes ahead of the car (left of it is the start wall and outside the world).
-  for (let i = 0; i < 5; i++) {
-    await page.mouse.click(820 + i * 80, 120);
-  }
-  check('five boxes spawned', await page.evaluate(() => boxes.length) === 5,
+  // A click on the canvas no longer drops a box, and there is no box counter.
+  await page.mouse.click(820, 120);
+  check('a click does not drop a box', await page.evaluate(() => boxes.length) === 0,
     await page.evaluate(() => boxes.length));
-  check('counter shows five', (await page.textContent('#count')) === 'Boxes: 5');
+  check('no box counter', await page.locator('#count').count() === 0);
+
+  // Boxes still exist in the engine (from code): drop five ahead of the car.
+  await page.evaluate(() => {
+    for (var i = 0; i < 5; i++) {
+      var p = screenToWorld(820 + i * 80, 120);
+      addBox(p.x, p.y);
+    }
+  });
 
   // Let the boxes fall and hit the ground.
   await page.waitForTimeout(1500);
@@ -66,11 +72,10 @@ function check(name, ok, detail) {
 
   // The car has a cabin that boxes can land on.
   check('car has a cabin', await page.evaluate(() => car.chassis.parts.length) === 3);
-  const drop = await page.evaluate(() => {
+  await page.evaluate(() => {
     var cab = car.chassis.parts[2];
-    return worldToScreen(cab.position.x, cab.bounds.min.y - 80);
+    addBox(cab.position.x, cab.bounds.min.y - 80);
   });
-  await page.mouse.click(drop.x, drop.y);
   // Shapes are random and may slide off afterwards, so check that the box touched down on the
   // roof (came to the roof line above the cabin) instead of falling through it.
   const onRoof = await page.waitForFunction(() => {
@@ -81,20 +86,10 @@ function check(name, ok, detail) {
   check('box lands on the cabin roof', onRoof);
   await page.waitForTimeout(500);
 
-  // Shift+click on a resting box removes it.
-  const before = await page.evaluate(() => boxes.length);
-  const target = await page.evaluate(() => worldToScreen(boxes[0].position.x, boxes[0].position.y));
-  await page.keyboard.down('Shift');
-  await page.mouse.click(target.x, target.y);
-  await page.keyboard.up('Shift');
-  check('shift+click removes a box', await page.evaluate(() => boxes.length) === before - 1,
-    await page.evaluate(() => boxes.length));
-
   // Drive right with the up arrow. Clear the test boxes first so they cannot block the car.
   await page.evaluate(() => {
     World.remove(world, boxes);
     boxes.length = 0;
-    updateCount();
   });
   await page.waitForTimeout(300);
   await page.evaluate(() => { window.__sounds.length = 0; });
@@ -274,6 +269,50 @@ function check(name, ok, detail) {
   await page.waitForTimeout(300);
   const scr = await page.evaluate(() => [app.renderer.screen.width, app.renderer.screen.height]);
   check('renderer resizes with the window', scr[0] === 900 && scr[1] === 600, scr.join('x'));
+
+  // Desktop has no on-screen pedals.
+  check('no pedals on desktop', !(await page.locator('#btnGas').isVisible()));
+
+  // Phone in landscape: pedals show instead of the keyboard help, GAS drives, BRAKE reverses, a tap spawns a box.
+  const phone = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+  const mob = await phone.newPage();
+  mob.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+  mob.on('pageerror', (err) => errors.push(err.message));
+  await mob.goto(PAGE_URL, { waitUntil: 'networkidle' });
+  await mob.waitForFunction(() => typeof engine !== 'undefined' && engine && car);
+  await mob.waitForTimeout(600);
+  const ui = await mob.evaluate(() => ({ gas: !!document.querySelector('#btnGas').offsetParent,
+    brake: !!document.querySelector('#btnBrake').offsetParent, info: !!document.querySelector('#info').offsetParent,
+    zoom: zoom }));
+  check('pedals shown on a phone', ui.gas && ui.brake && !ui.info, JSON.stringify(ui));
+  check('phone view zooms out', ui.zoom < 0.8, ui.zoom.toFixed(2));
+  // Hold a pedal with a real touch (Chrome DevTools Protocol), as a finger would
+  const cdp = await phone.newCDPSession(mob);
+  const pedal = async (id, type) => {
+    const b = await mob.locator(id).boundingBox();
+    const pt = { x: b.x + b.width / 2, y: b.y + b.height / 2, id: 1 };
+    await cdp.send('Input.dispatchTouchEvent', type === 'pointerdown'
+      ? { type: 'touchStart', touchPoints: [pt] } : { type: 'touchEnd', touchPoints: [] });
+  };
+  const mx0 = await mob.evaluate(() => car.chassis.position.x);
+  await pedal('#btnGas', 'pointerdown');
+  await mob.waitForTimeout(1200);
+  const held = await mob.evaluate(() => input.accel && document.querySelector('#btnGas').classList.contains('down'));
+  await pedal('#btnGas', 'pointerup');
+  const mx1 = await mob.evaluate(() => car.chassis.position.x);
+  check('GAS pedal drives the car', held && mx1 - mx0 > 100, Math.round(mx1 - mx0) + ' px');
+  check('GAS released on lift', await mob.evaluate(() => !input.accel));
+  await pedal('#btnBrake', 'pointerdown');
+  await mob.waitForTimeout(2500);
+  const mrev = await mob.evaluate(() => ({ gear: car.engine.gear, speed: car.speed }));
+  await pedal('#btnBrake', 'pointerup');
+  check('BRAKE pedal brakes, then reverses', mrev.gear === -1 && mrev.speed < -0.3,
+    'gear ' + mrev.gear + ', speed ' + mrev.speed.toFixed(1));
+  await mob.touchscreen.tap(600, 80);
+  check('a tap does not drop a box', await mob.evaluate(() => boxes.length) === 0,
+    await mob.evaluate(() => boxes.length));
+  await mob.screenshot({ path: path.join(SHOT_DIR, 'simulation-mobile.png') });
+  await phone.close();
 
   check('no console errors', errors.length === 0, errors.join(' | ') || undefined);
 

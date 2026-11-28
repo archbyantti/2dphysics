@@ -187,3 +187,6 @@ function playSplash(strength) {
 // Initialize audio on first user interaction
 document.addEventListener('click', initAudio, { once: true });
 document.addEventListener('keydown', initAudio, { once: true });
+// Touch screens: audio may only start at the end of a touch, and the pedals swallow the click
+document.addEventListener('touchend', initAudio, { once: true });
+document.addEventListener('pointerup', initAudio, { once: true });

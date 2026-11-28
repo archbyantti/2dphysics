@@ -13,7 +13,6 @@ function addStartWall() {
 
 // Remove boxes that fell out of the world (e.g. their ground chunk was unloaded behind the car)
 function removeLostBoxes() {
-  var before = boxes.length;
   for (var i = boxes.length - 1; i >= 0; i--) {
     var b = boxes[i];
     if (b.position.y > groundHeightAt(b.position.x) + 1500) {
@@ -21,23 +20,10 @@ function removeLostBoxes() {
       boxes.splice(i, 1);
     }
   }
-  if (boxes.length !== before) updateCount();
 }
 
-// Remove the topmost box under a screen position (Shift+click)
-function removeBoxAt(sx, sy) {
-  var p = screenToWorld(sx, sy);
-  for (var i = boxes.length - 1; i >= 0; i--) {
-    if (Matter.Vertices.contains(boxes[i].vertices, p)) {
-      World.remove(world, boxes[i]);
-      boxes.splice(i, 1);
-      updateCount();
-      break;
-    }
-  }
-}
-
-// Spawn a random box at position
+// Spawn a random box at position. The player cannot drop boxes any more; this is kept for the tests
+// (boxes exercise collisions, impact sounds and the water) and can be called from the console.
 function addBox(wx, wy) {
   var s = 30 + Math.random() * 40;
   var colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
@@ -60,14 +46,6 @@ function addBox(wx, wy) {
   b.renderColor = colors[Math.floor(Math.random() * colors.length)];
   World.add(world, b);
   boxes.push(b);
-  updateCount();
-}
-
-// Update box counter display
-function updateCount() {
-  if (countEl) {
-    countEl.textContent = 'Boxes: ' + boxes.length;
-  }
 }
 
 // Distance the car has travelled from the start line, in meters
