@@ -9,8 +9,11 @@ function setUpCanvas() {
   canvas.addEventListener('mouseup', handleMouseUp);
   canvas.addEventListener('mousemove', handleMouseMove);
   canvas.addEventListener('wheel', handleWheel, { passive: false });
-  canvas.addEventListener('keydown', handleKeyDown);
-  canvas.addEventListener('keyup', handleKeyUp);
+  // Keys go to the whole window, so the car drives right after load without clicking the canvas first
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('keyup', handleKeyUp);
+  // Releasing all keys when the window loses focus avoids a stuck throttle
+  window.addEventListener('blur', function () { input.accel = input.rev = input.brake = false; });
 }
 
 // Handle window resize
@@ -58,6 +61,8 @@ function handleMouseMove(e) {
 
 // Handle keyboard input for car controls
 function handleKeyDown(e) {
+  // Driving keys must not scroll the page or press a focused button
+  if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'Space') e.preventDefault();
   switch (e.code) {
     case 'ArrowUp': input.accel = true; break;
     case 'ArrowDown': input.rev = true; break;

@@ -32,6 +32,17 @@ function check(name, ok, detail) {
     groundHeightAt(w.position.x) - (w.position.y + car.wheelR))));
   check('car rests on the ground', Math.abs(gap) < 8, gap.toFixed(1) + ' px');
 
+  // The car drives right after load, before anything on the page was clicked or focused.
+  const startX = await page.evaluate(() => car.chassis.position.x);
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(500);
+  await page.keyboard.up('ArrowUp');
+  const movedAtLoad = await page.evaluate((x) => car.chassis.position.x - x, startX);
+  check('car drives without clicking first', movedAtLoad > 20, Math.round(movedAtLoad) + ' px');
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(1500);
+  await page.keyboard.up('Space');
+
   // Record impact sounds ('knock' or 'thump') by wrapping the global the collision handler calls.
   await page.evaluate(() => {
     window.__sounds = [];
@@ -185,6 +196,30 @@ function check(name, ok, detail) {
   await page.waitForTimeout(2500);
   const landed = await soundCount('thump');
   check('landing after the jump thumps', landed >= 1, landed);
+
+  // The brake stops a car rolling back down a hill and holds it there.
+  await page.evaluate(() => {
+    var best = 0, bx = 0;
+    for (var x = 3000; x < 30000; x += 20) {
+      if (jumpRise(x - 400) || jumpRise(x + 400) || jumpRise(x)) continue;
+      var sl = (groundHeightAt(x - 150) - groundHeightAt(x + 150)) / 300;  // Rising to the right
+      if (sl > best) { best = sl; bx = x; }
+    }
+    World.remove(world, car.all);
+    updateTerrain(bx);
+    createCar(bx);
+  });
+  await page.waitForTimeout(1200);
+  const rollBack = await page.evaluate(() => car.speed);
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(2000);
+  const heldX = await page.evaluate(() => car.chassis.position.x);
+  await page.waitForTimeout(1000);
+  const hold = await page.evaluate((x) => ({ creep: car.chassis.position.x - x, speed: car.speed }), heldX);
+  await page.keyboard.up('Space');
+  check('car rolls back on a hill without brakes', rollBack < -0.3, rollBack.toFixed(2));
+  check('brake holds the car on the hill', Math.abs(hold.creep) < 5 && Math.abs(hold.speed) < 0.1,
+    'creep ' + hold.creep.toFixed(1) + ' px');
 
   // R puts a flipped car back on its wheels.
   await page.evaluate(() => {

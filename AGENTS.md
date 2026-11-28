@@ -123,6 +123,9 @@ When working on this repository:
   shifting); `car.engine` is the single source of truth that the sound and the HUD read. Tune driving in
   `MOTOR` (gear `top` speeds and `torque`), not in the sound code. The car uses a low `frictionAir`
   (`MOTOR.bodyAirFriction`); Matter.js's default would cap its speed.
+- Braking is friction (`MOTOR.brakeDecel`): it removes wheel spin at a steady rate, and a wheel that has stopped
+  is held by giving it infinite inertia (`lockWheel`), released again when the brake lets go. A proportional
+  brake (spin x factor) never holds the car on a slope.
 - Impact sounds and impact dust must use `impactSpeed(pair)` (speed along the contact normal), not total relative
   speed: the ground is many small bodies, so a rolling wheel starts a new collision at every seam.
 - The car is real Matter.js bodies (a chassis and two wheels joined by axle constraints), but it is drawn by the

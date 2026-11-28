@@ -50,6 +50,7 @@ var MOTOR = {
   downshiftRpm: 2300,
   shiftMs: 220,         // Drive is cut for this long (sim time) during an upshift
   engineBrake: 0.004,   // Slows the wheels when off the throttle
+  brakeDecel: 0.35,      // Tyre surface speed the brake removes per 60 Hz step, px/step (Space, or Down while rolling)
   airDrag: 0.0006,      // Air resistance on wheel spin
   bodyAirFriction: 0.0015, // Matter.js frictionAir for the car (default 0.01 would cap the speed near 11)
   torqueScale: 0.01     // Converts torque into angular velocity change per step

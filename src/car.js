@@ -51,6 +51,8 @@ function createCar(x) {
   };
   var wheelA = Bodies.circle(cx + wheelAOffset, wheelY, wheelSize, wheelOpts());
   var wheelB = Bodies.circle(cx + wheelBOffset, wheelY, wheelSize, wheelOpts());
+  wheelA.freeInertia = wheelA.inertia;  // Restored when the brake releases a held wheel
+  wheelB.freeInertia = wheelB.inertia;
 
   // Axles (constraints) attach each wheel to the chassis. The cabin moves the chassis
   // center of mass, so anchor points are measured from the chassis position.
@@ -170,16 +172,39 @@ function updateCarMotor(dt) {
   } else if (drive === 0) {
     tau = -rim * MOTOR.engineBrake;  // Engine braking when off the throttle
   }
+  var brakeStep = MOTOR.brakeDecel / car.wheelR * k;  // Spin the brake can remove this step, rad
   car.wheels.forEach(function (wl) {
     var w = Matter.Body.getAngularVelocity(wl);
-    // Brake removes 10% of the wheel spin per 60 Hz step
     if (brake) {
-      w *= Math.pow(0.90, k);
+      // A brake is friction: it removes spin at a steady rate whichever way the wheel turns, and once
+      // the wheel has (almost) stopped it holds it. A held wheel gets infinite inertia, so only tyre
+      // grip can move the car; on these slopes grip wins and the car stays put, also rolling backward.
+      if (Math.abs(w) <= brakeStep) {
+        lockWheel(wl, true);
+        return;
+      }
+      w -= (w > 0 ? 1 : -1) * brakeStep;
+    } else {
+      lockWheel(wl, false);
     }
     // Air drag resists wheel spin
     var t = tau - MOTOR.airDrag * w * Math.abs(w);
     Matter.Body.setAngularVelocity(wl, w + t * MOTOR.torqueScale * k);
   });
+}
+
+// Hold (or release) a wheel so it cannot turn
+function lockWheel(wl, on) {
+  if (on) {
+    if (!wl.brakeLocked) {
+      wl.brakeLocked = true;
+      Matter.Body.setInertia(wl, Infinity);
+    }
+    Matter.Body.setAngularVelocity(wl, 0);
+  } else if (wl.brakeLocked) {
+    wl.brakeLocked = false;
+    Matter.Body.setInertia(wl, wl.freeInertia);
+  }
 }
 
 // Put the car back on its wheels at its current x (R key)
